@@ -1,0 +1,6 @@
+# Build-time staging of the monorepo's heaven-framework (dereferenced copy). Not committed —
+# the build workflow / local build stages it fresh from base/heaven-framework.
+_vendor/
+__pycache__/
+*.pyc
+.pytest_cache/
