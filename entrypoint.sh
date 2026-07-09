@@ -3,7 +3,7 @@
 # (NOT a server — unlike the observatory container. A GitHub Actions job runs this and ends.)
 set -eu
 
-: "${MODE:?set MODE=review|pr}"
+: "${MODE:?set MODE=review|pr|harvest}"
 : "${MINIMAX_API_KEY:?set MINIMAX_API_KEY (the model credential)}"
 
 export HEAVEN_DATA_DIR="${HEAVEN_DATA_DIR:-/tmp/heaven_data}"

@@ -61,6 +61,16 @@ def t_non_string_aimessage_content_coerced():
     assert extract_text({"history": hist}) == "['a', 'b']"
 
 
+def t_harvest_prompt_names_skill_branch_and_gate():
+    # MODE=harvest routes to a prompt that names the skill, the branch convention, and the
+    # never-self-approve gate — the load-bearing constraints of the self-maintenance loop.
+    p = ci_agent._harvest_prompt("/repo", "owner/repo")
+    assert "harvest-rules-from-reviews" in p
+    assert "cicd-rules/" in p
+    assert "never approve or merge" in p
+    assert "owner/repo" in p and "/repo" in p
+
+
 def run_all():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("t_")]
     passed = 0

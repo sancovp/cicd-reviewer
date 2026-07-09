@@ -11,7 +11,7 @@ UnifiedChat + History, tools=[BashTool], provider=ANTHROPIC, model=MiniMax-M3). 
 is auto-selected by unified_chat.py when model starts with "minimax" (needs MINIMAX_API_KEY).
 
 Env:
-  MODE               review | pr   (which task to run)
+  MODE               review | pr | harvest   (which task to run)
   REPO_DIR           checked-out repo path (default /repo)
   GITHUB_REPOSITORY  owner/name
   PR_NUMBER          (review mode) the PR to review
@@ -57,6 +57,22 @@ def _pr_prompt(repo, gh_repo, head):
         f"what this branch changes against it from the actual diff, check no PR already exists for "
         f"`{head}`, then open one with `gh pr create --repo {gh_repo} --head {head}` giving it a "
         f"real title and body. Print the PR URL. End with DONE."
+    )
+
+
+def _harvest_prompt(repo, gh_repo):
+    return (
+        f"MODE=harvest. You are running your scheduled rule-harvest over your own past reviews "
+        f"on {gh_repo}. The repo is checked out at {repo}. Follow the `harvest-rules-from-reviews` "
+        f"skill EXACTLY: gather your recent posted reviews with gh, read your current rules, and "
+        f"look for a RECURRING finding class (>=2 distinct reviews) not already covered. Either "
+        f"(a) author ONE new rule-candidate file under "
+        f"automation/cicd-reviewer/cicd_aios/.claude/rules/ on a cicd-rules/<slug> branch and "
+        f"open a PR for it (the maintainer's merge is the approval gate — never approve or merge "
+        f"it yourself), or (b) if nothing recurs or it is already covered, add nothing and say "
+        f"so plainly. Your ONLY tool is bash: write the rule file with a quoted heredoc "
+        f"(cat > path <<'EOF' ... EOF). Never call WriteBlockReportTool unless you are truly "
+        f"blocked — it HALTS the run; it is not a progress note. End with DONE."
     )
 
 
@@ -109,8 +125,10 @@ def main():
         )
     elif mode == "pr":
         prompt = _pr_prompt(repo, gh_repo, os.environ.get("HEAD_REF", ""))
+    elif mode == "harvest":
+        prompt = _harvest_prompt(repo, gh_repo)
     else:
-        sys.exit(f"FATAL: MODE must be 'review' or 'pr', got {mode!r}")
+        sys.exit(f"FATAL: MODE must be 'review', 'pr' or 'harvest', got {mode!r}")
 
     log.info("mode=%s repo=%s gh_repo=%s model=%s cwd=%s",
              mode, repo, gh_repo, os.environ.get("CICD_MODEL", "MiniMax-M3"), os.getcwd())
