@@ -1,0 +1,45 @@
+name: Build image
+
+# SELF-HOSTING: the published cicd-reviewer repo builds its OWN image and pushes it to ghcr.
+# heaven-framework is installed from PyPI (pinned in the Dockerfile), so nothing outside this
+# repo is needed to build — no monorepo _vendor staging. This file is authored in the monorepo
+# at automation/cicd-reviewer/.github/workflows/ and mirrored out by scalable-publishing.
+#
+# Path-filtered to real source: a pure README/CHANGELOG refresh publish does NOT rebuild the
+# image (only Dockerfile / agent / AIOS / entrypoint changes do).
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'ci_agent.py'
+      - 'cicd_aios/**'
+      - 'entrypoint.sh'
+      - '.github/workflows/build-image.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to ghcr
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/cicd-reviewer:latest
+            ghcr.io/${{ github.repository_owner }}/cicd-reviewer:${{ github.sha }}

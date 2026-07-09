@@ -3,9 +3,9 @@
 # heaven-framework's resolve_devdirs auto-loads /cicd_aios/.claude/rules + .claude/skills
 # into its system prompt. The repo under review is mounted/checked-out at /repo.
 #
-# Build context is THIS directory (automation/cicd-reviewer/). The build step first stages
-# the monorepo's heaven-framework 0.1.30 into ./_vendor/heaven-framework (see build workflow),
-# because it lives outside this context.
+# Build context is THIS directory. heaven-framework is installed from PyPI (pinned below), so the
+# image is SELF-CONTAINED: it builds from the published sancovp/cicd-reviewer repo alone, with no
+# monorepo _vendor staging. This is what makes cicd-reviewer self-hosting.
 FROM python:3.11-slim
 
 # git + gh (GitHub CLI) for the review/PR git ops
@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     apt-get update && apt-get install -y --no-install-recommends gh && \
     rm -rf /var/lib/apt/lists/*
 
-# heaven-framework 0.1.30 base deps, pinned. google-adk/genai (forces pydantic>=2.12, ADK
+# heaven-framework base deps, pinned. google-adk/genai (forces pydantic>=2.12, ADK
 # dead-by-default) and skill-manager-mcp (we use dep-free devdir skill loading, Anthropic/MiniMax
 # path only) are intentionally OMITTED. Installed WITH their transitive deps so the heaven
 # install below can be --no-deps. Provider classes ChatOpenAI/Groq/DeepSeek are imported at
@@ -31,10 +31,11 @@ RUN pip install --no-cache-dir \
     'langgraph==0.2.60' 'litellm==1.80.0' \
     'requests==2.33.1' 'httpx==0.28.1' 'fastmcp==2.9.0' 'tiktoken>=0.5.0'
 
-# heaven-framework itself, WITHOUT deps (so pip cannot re-resolve/upgrade the pins above —
-# Isaac: "get the new version no deps"). _vendor/heaven-framework is the synced 0.1.30 copy.
-COPY _vendor/heaven-framework /opt/heaven-framework
-RUN pip install --no-cache-dir --no-deps /opt/heaven-framework && \
+# heaven-framework itself from PyPI, WITHOUT deps (so pip cannot re-resolve/upgrade the pins
+# above — Isaac: "get the new version no deps"). Pinned to a released version so the image is
+# reproducible + self-hosting (no vendored copy, no monorepo build context). Bump this pin to
+# ship a new heaven-framework into the reviewer.
+RUN pip install --no-cache-dir --no-deps heaven-framework==0.1.32 && \
     python3 -c "import heaven_base; print('heaven-framework', heaven_base.__version__, 'import OK')"
 
 # The reviewer AIOS (its .claude/rules + .claude/skills ARE the agent's config) + the agent
