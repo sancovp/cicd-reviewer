@@ -35,7 +35,7 @@ RUN pip install --no-cache-dir \
 # above — Isaac: "get the new version no deps"). Pinned to a released version so the image is
 # reproducible + self-hosting (no vendored copy, no monorepo build context). Bump this pin to
 # ship a new heaven-framework into the reviewer.
-RUN pip install --no-cache-dir --no-deps heaven-framework==0.1.32 && \
+RUN pip install --no-cache-dir --no-deps heaven-framework==0.1.33 && \
     python3 -c "import heaven_base; print('heaven-framework', heaven_base.__version__, 'import OK')"
 
 # The reviewer AIOS (its .claude/rules + .claude/skills ARE the agent's config) + the agent
