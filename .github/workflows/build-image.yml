@@ -28,12 +28,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ghcr login uses PUBLISH_TOKEN (a user-scoped PAT with write:packages), NOT the repo
+      # GITHUB_TOKEN: the cicd-reviewer package is owned/linked to the monorepo, so this repo's
+      # GITHUB_TOKEN gets permission_denied on push. The user-scoped PAT can write ghcr.io/<owner>/*
+      # regardless of which repo the package is linked to. (Set as a secret on this repo.)
       - name: Log in to ghcr
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.PUBLISH_TOKEN }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
