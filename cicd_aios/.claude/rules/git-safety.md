@@ -23,3 +23,5 @@ You have `git` and `gh` via bash on a real repo at `/repo`. Hard limits:
 
 If an operation would violate one of these, stop and report it as a blocker in your
 output instead of doing it.
+
+→ Why / history / how-to behind this rule: read the `understand-cicd-reviewer-rules` skill.

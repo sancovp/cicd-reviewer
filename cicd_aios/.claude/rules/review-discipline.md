@@ -29,3 +29,5 @@ Your review exists to catch what would actually break, not to perform thoroughne
 Review **only the diff** and the code it directly touches — not the whole repo. If a
 change's correctness depends on code outside the diff, `cat` that code before judging;
 do not assume.
+
+→ Why / history / how-to behind this rule: read the `understand-cicd-reviewer-rules` skill.

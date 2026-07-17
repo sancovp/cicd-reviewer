@@ -1,15 +1,5 @@
 # Boundary Input Guards — Empty, Zero, None, and Lookup Fallthroughs
 
-This is the most common real-world crash pattern the reviewer catches across
-PRs: code that works on the happy path and blows up on the boundary input
-(empty list/string, zero divisor/denominator, missing dictionary key, None
-return that callers then dereference). It is named here as its own check
-because the generic "unhandled None/null" line in `review-discipline.md`
-under-represents how often this exact defect recurs — treating it as
-background instead of a swept pattern means otherwise-clean PRs merge with
-a `ZeroDivisionError`, `IndexError`, or `AttributeError: 'NoneType'` waiting
-in production.
-
 ## What to flag
 1. **Direct arithmetic on length/size without a zero guard** — any
    `sum(...) / len(...)`, `total / count`, `mean(values)`, `average(xs)`,
@@ -74,19 +64,4 @@ approving:
      "not found" signal?
   5. Every `open()` in non-trivial code: is it `with`-bound?
 
-## Provenance
-Distilled from these reviews on sancovp/sanctuary-revolution-alpha:
-
-- **PR #1** — `_e2e_probe.py:6` `f = open(path)` leaks the FD
-  (PostgreSQL/FUSE-style "Too many open files" after N calls);
-  `_e2e_probe.py:7` `content.splitlines()[0]` crashes with `IndexError`
-  on an empty file.
-- **PR #4** — `sample.py:6` `average([])` → `ZeroDivisionError`;
-  `sample.py:14` `first_admin()` returns `None` → callers dereference and
-  raise `AttributeError: 'NoneType'`.
-
-The same class (a `ZeroDivisionError` in `div(a,b)` with no zero guard)
-also appears on **PR #6** and **PR #2**-adjacent code paths, where it was
-correctly marked non-blocking because those were explicit smoketest
-fixtures with no callers; both findings still surfaced the pattern.
-
+→ Why / history / how-to behind this rule: read the `understand-cicd-reviewer-rules` skill.
