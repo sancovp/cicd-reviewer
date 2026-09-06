@@ -51,12 +51,19 @@ def _review_prompt(repo, gh_repo, pr, base, head):
 
 
 def _pr_prompt(repo, gh_repo, head):
+    # NOTE (2026-09-06, Isaac's ruling): "it cannot run an LLM to check something that git api
+    # can do." This prompt used to instruct the agent to "check no PR already exists for <head>"
+    # — a question `gh api repos/<r>/pulls?state=open&head=<owner>:<branch>` answers in one call.
+    # That check is now the caller's gate (cicd-pr-on-push.yml), which only dispatches when the
+    # answer is genuinely no. The agent is handed work that is already known to be needed, and
+    # spends its tokens on the one thing it is actually for: summarizing the diff.
     return (
-        f"MODE=pr. Branch `{head}` was pushed to {gh_repo} with no open PR. The repo is checked "
-        f"out at {repo}. Follow the `open-pr-for-branch` skill: find the default branch, summarize "
-        f"what this branch changes against it from the actual diff, check no PR already exists for "
-        f"`{head}`, then open one with `gh pr create --repo {gh_repo} --head {head}` giving it a "
-        f"real title and body. Print the PR URL. End with DONE."
+        f"MODE=pr. Branch `{head}` on {gh_repo} has no open PR — this has ALREADY been verified "
+        f"against the GitHub API by the caller, so do NOT spend a tool call re-checking it. The "
+        f"repo is checked out at {repo}. Follow the `open-pr-for-branch` skill: find the default "
+        f"branch, summarize what this branch changes against it from the actual diff, then open "
+        f"the PR with `gh pr create --repo {gh_repo} --head {head}` giving it a real title and "
+        f"body. Print the PR URL. End with DONE."
     )
 
 

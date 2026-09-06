@@ -1,0 +1,162 @@
+name: Run reviewer (dispatched)
+
+# ─────────────────────────────────────────────────────────────────────────────────────────
+# THE DOOR. This is the file that was missing (verified 2026-09-06: zero `repository_dispatch`
+# and zero `workflow_call` anywhere in either repo — the reviewer had no inbound entry point,
+# so nothing could ever call it, so the private monorepo ran it on its own billed runner).
+#
+# Isaac, 2026-09-06: "the public repo is MY REPO THAT HAS MY TOKENS AND EVERYTHING — it is
+# supposed to be GETTING CALLED." This is that call being received.
+#
+# WHY IT BELONGS HERE: this repo is PUBLIC, so its Actions minutes are free. The monorepo is
+# PRIVATE and bills every minute. Publishing this reviewer in July 2026 moved its SOURCE out
+# and made it build its OWN image ("self-hosting" — build-image.yml); it never moved the RUN.
+# This file moves the run.
+#
+# Authored in the monorepo at automation/cicd-reviewer/.github/workflows/ and mirrored out by
+# scalable-publishing (repo-canonicity: edit up, publish down — never hand-edit the public copy).
+#
+# ⚠ SECURITY — THE ONE RULE THIS FILE MUST NEVER BREAK:
+#   This is a PUBLIC repo holding PUBLISH_TOKEN, a PAT with read access to the PRIVATE monorepo.
+#   `repository_dispatch` can only be sent by an actor with push access — i.e. the owner. That
+#   is what makes holding the token here safe. NEVER add `pull_request`, `pull_request_target`,
+#   `issue_comment`, or any fork-reachable trigger to this workflow: a stranger's PR would then
+#   run in a context that can read the token and, through it, the entire private monorepo.
+# ─────────────────────────────────────────────────────────────────────────────────────────
+
+on:
+  repository_dispatch:
+    types: [open-pr, review-pr]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "pr | review"
+        required: true
+        default: "pr"
+      repo:
+        description: "owner/name of the repo to act on"
+        required: true
+      head_ref:
+        description: "Branch under review"
+        required: true
+      pr_number:
+        description: "PR number (review mode only)"
+        required: false
+        default: ""
+      base_ref:
+        description: "Base branch (review mode only)"
+        required: false
+        default: "main"
+
+permissions:
+  contents: read
+
+jobs:
+  run-reviewer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve the job from the dispatch payload
+        id: job
+        env:
+          EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          OWNER: ${{ github.repository_owner }}
+          P_REPO: ${{ github.event.client_payload.repo }}
+          P_HEAD: ${{ github.event.client_payload.head_ref }}
+          P_PR: ${{ github.event.client_payload.pr_number }}
+          P_BASE: ${{ github.event.client_payload.base_ref }}
+          I_MODE: ${{ github.event.inputs.mode }}
+          I_REPO: ${{ github.event.inputs.repo }}
+          I_HEAD: ${{ github.event.inputs.head_ref }}
+          I_PR: ${{ github.event.inputs.pr_number }}
+          I_BASE: ${{ github.event.inputs.base_ref }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT" = "repository_dispatch" ]; then
+            case "$ACTION" in
+              open-pr)   MODE=pr ;;
+              review-pr) MODE=review ;;
+              *) echo "::error::unknown dispatch type '$ACTION'"; exit 1 ;;
+            esac
+            REPO="$P_REPO"; HEAD="$P_HEAD"; PR="${P_PR:-}"; BASE="${P_BASE:-main}"
+          else
+            MODE="$I_MODE"; REPO="$I_REPO"; HEAD="$I_HEAD"; PR="${I_PR:-}"; BASE="${I_BASE:-main}"
+          fi
+
+          [ -n "$REPO" ] || { echo "::error::no target repo in payload"; exit 1; }
+          [ -n "$HEAD" ] || { echo "::error::no head_ref in payload"; exit 1; }
+
+          # Belt-and-braces: only ever act on repos belonging to this owner, even though only
+          # someone with push access here could have dispatched in the first place.
+          case "$REPO" in
+            "$OWNER"/*) : ;;
+            *) echo "::error::refusing to act on '$REPO' — not owned by $OWNER"; exit 1 ;;
+          esac
+
+          if [ "$MODE" = "review" ] && [ -z "$PR" ]; then
+            echo "::error::review mode requires pr_number"; exit 1
+          fi
+
+          {
+            echo "mode=$MODE"
+            echo "repo=$REPO"
+            echo "head=$HEAD"
+            echo "pr=$PR"
+            echo "base=$BASE"
+          } >> "$GITHUB_OUTPUT"
+          echo "mode=$MODE repo=$REPO head=$HEAD pr=${PR:-n/a} base=$BASE"
+
+      - name: Check the model credential is present
+        env:
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+        run: |
+          if [ -z "${MINIMAX_API_KEY:-}" ]; then
+            echo "::error::MINIMAX_API_KEY is not set as a secret on this repo. The reviewer has"
+            echo "::error::no model credential and cannot run. Set it with:"
+            echo "::error::  gh secret set MINIMAX_API_KEY --repo ${{ github.repository }}"
+            exit 1
+          fi
+          echo "Model credential present."
+
+      # Check out the TARGET repo (the private monorepo) here, on this repo's free runner.
+      - name: Check out the repo under review
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.job.outputs.repo }}
+          ref: ${{ steps.job.outputs.head }}
+          token: ${{ secrets.PUBLISH_TOKEN }}
+          fetch-depth: 0   # base + head needed for the diff
+          path: repo
+
+      # The cicd-reviewer package is owned/linked to the monorepo, so this repo's GITHUB_TOKEN
+      # gets permission_denied pulling it. The user-scoped PAT can read ghcr.io/<owner>/*
+      # regardless of which repo the package is linked to. (Same reason as build-image.yml.)
+      - name: Log in to ghcr
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.PUBLISH_TOKEN }}
+
+      - name: Run the reviewer
+        env:
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          RUN_GITHUB_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+          MODE: ${{ steps.job.outputs.mode }}
+          TARGET_REPO: ${{ steps.job.outputs.repo }}
+          PR_NUMBER: ${{ steps.job.outputs.pr }}
+          BASE_REF: ${{ steps.job.outputs.base }}
+          HEAD_REF: ${{ steps.job.outputs.head }}
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -e MODE \
+            -e MINIMAX_API_KEY \
+            -e GITHUB_TOKEN="$RUN_GITHUB_TOKEN" \
+            -e GITHUB_REPOSITORY="$TARGET_REPO" \
+            -e PR_NUMBER \
+            -e BASE_REF \
+            -e HEAD_REF \
+            -v "${{ github.workspace }}/repo:/repo" \
+            ghcr.io/${{ github.repository_owner }}/cicd-reviewer:latest
