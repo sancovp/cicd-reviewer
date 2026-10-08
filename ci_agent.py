@@ -45,8 +45,10 @@ def _review_prompt(repo, gh_repo, pr, base, head):
         f"`{base}`. The repo is checked out at {repo}. Follow the `review-pr-diff` skill: read "
         f"the diff, find real correctness/security/contract issues per your review-discipline "
         f"rule (cite path:line, trace each to an exact symptom, drop vague ones), and post your "
-        f"review with `gh pr review {pr} --repo {gh_repo}` (--approve if clean, --request-changes "
-        f"if there are real blocking findings, else --comment). End with DONE."
+        f"review with `gh pr review {pr} --repo {gh_repo} --comment`. The review's LAST LINE must be "
+        f"exactly `VERDICT: CLEAN` (no blocking finding) or `VERDICT: BLOCKING` (at least one real "
+        f"correctness/security/contract finding) — the workflow merges the pull request on CLEAN. "
+        f"End with DONE."
     )
 
 

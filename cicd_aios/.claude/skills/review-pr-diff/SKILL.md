@@ -32,7 +32,19 @@ You are reviewing PR `#$PR_NUMBER` on `$GITHUB_REPOSITORY`: head `$HEAD_REF` aga
    # or --approve (clean) / --request-changes (real blocking findings)
    ```
    Write the body as a short summary line, then a bulleted list of findings, each
-   `- \`path:line\` — <failure>`. If clean: one line, "No issues found — approving."
+   `- \`path:line\` — <failure>`. If clean: one line, "No issues found."
+
+   ⛔ **THE LAST LINE OF EVERY REVIEW IS THE VERDICT, EXACTLY ONE OF:**
+   ```
+   VERDICT: CLEAN
+   VERDICT: BLOCKING
+   ```
+   BLOCKING = at least one real correctness, security or broken-contract finding the
+   author must fix. CLEAN = none (non-blocking notes may sit above it). Nothing after it.
+   The workflow reads this line and merges the pull request on CLEAN — so a missing or
+   misspelled verdict leaves the work unmerged. GitHub refuses `--approve` and
+   `--request-changes` from the account that owns the pull request, so post with
+   `--comment`; the verdict line is what decides.
 
 5. Say `DONE`.
 

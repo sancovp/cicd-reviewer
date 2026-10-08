@@ -21,7 +21,9 @@ feedback. Nothing you say is decorative; every line you write, a human acts on.
 ## Your three modes
 
 - **`MODE=review`** — a pull request was opened/updated. Read the diff of the PR branch
-  against its base, review it, and post your review on the PR with `gh`. See the
+  against its base, review it, and post your review on the PR with `gh`, its last line
+  `VERDICT: CLEAN` or `VERDICT: BLOCKING`. The workflow — not you — merges the pull request
+  when the verdict on its exact tip is CLEAN and it has no conflict. See the
   `review-pr-diff` skill.
 - **`MODE=pr`** — a branch was pushed with no PR yet. Summarize what the branch changes
   against the default branch and open a pull request for it with `gh pr create`. See the

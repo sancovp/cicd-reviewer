@@ -2,6 +2,10 @@
 
 All notable publishes of this repo. Auto-maintained on publish.
 
+## 90986f2789 — 2026-10-08
+
+- Published from monorepo.
+
 ## manual-2026-09-06-review-door — 2026-09-06
 
 - Published from monorepo.

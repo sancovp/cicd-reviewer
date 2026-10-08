@@ -1,0 +1,57 @@
+name: Sweep — no branch left unmerged
+
+# ─────────────────────────────────────────────────────────────────────────────────────────
+# Work is done only when it is on the default branch. Once a day, over every repository the owner has (its own
+# sources, not forks, not archived), every branch that is not the default and not the one standing branch
+# (`om-is-the-base`) is moved toward the default branch: deleted when its tip is already there; merged when its
+# pull request's verdict is CLEAN; reviewed when it has no verdict; given a pull request when it has none. What it
+# cannot move is written to ONE tracking issue on the canonical home, `UNMERGED WORK`. Deterministic: git's API
+# only (sweep.py); the model runs only in the reviews it dispatches, at most `max_reviews` a run.
+#
+# Authored in the monorepo at automation/cicd-reviewer/.github/workflows/ and mirrored out by scalable-publishing.
+# ⚠ SECURITY: schedule and workflow_dispatch only — never a fork-reachable trigger (see review.yml).
+# ─────────────────────────────────────────────────────────────────────────────────────────
+
+on:
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "true = say what it would do, change nothing"
+        required: false
+        default: "false"
+      repo:
+        description: "only this repo (owner/name); blank = every source repo"
+        required: false
+        default: ""
+      max_reviews:
+        description: "reviews dispatched at most this run"
+        required: false
+        default: "20"
+
+concurrency:
+  group: sweep
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sweep every repository
+        env:
+          GH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          DRY: ${{ github.event.inputs.dry_run || 'false' }}
+          ONLY: ${{ github.event.inputs.repo || '' }}
+          MAXR: ${{ github.event.inputs.max_reviews || '20' }}
+        run: |
+          set -euo pipefail
+          ARGS=(--owner "$OWNER" --max-reviews "$MAXR")
+          [ "$DRY" = "true" ] && ARGS+=(--dry-run)
+          [ -n "$ONLY" ] && ARGS+=(--repo "$ONLY")
+          python3 sweep.py "${ARGS[@]}"

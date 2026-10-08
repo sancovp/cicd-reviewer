@@ -71,6 +71,11 @@ def t_harvest_prompt_names_skill_branch_and_gate():
     assert "owner/repo" in p and "/repo" in p
 
 
+def t_review_prompt_demands_the_verdict_line():
+    p = ci_agent._review_prompt("/repo", "o/r", "7", "main", "work")
+    assert "VERDICT: CLEAN" in p and "VERDICT: BLOCKING" in p and "--comment" in p
+
+
 def run_all():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("t_")]
     passed = 0

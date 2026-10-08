@@ -107,7 +107,27 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "mode=$MODE repo=$REPO head=$HEAD pr=${PR:-n/a} base=$BASE"
 
+      # A pull request merged or closed before its review ran, or a branch deleted before its PR was opened,
+      # leaves nothing to do — say so and stop, instead of failing on a checkout of a branch that is gone.
+      - name: Is there still something to do?
+        id: live
+        env:
+          GH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+          MODE: ${{ steps.job.outputs.mode }}
+          REPO: ${{ steps.job.outputs.repo }}
+          PR: ${{ steps.job.outputs.pr }}
+          HEAD: ${{ steps.job.outputs.head }}
+        run: |
+          set -euo pipefail
+          if [ "$MODE" = "review" ]; then
+            STATE=$(gh pr view "$PR" --repo "$REPO" --json state -q .state)
+            [ "$STATE" = "OPEN" ] && echo "skip=false" >> "$GITHUB_OUTPUT" || { echo "skip=true" >> "$GITHUB_OUTPUT"; echo "#$PR is $STATE — nothing to review."; }
+          else
+            if gh api "repos/$REPO/branches/$HEAD" >/dev/null 2>&1; then echo "skip=false" >> "$GITHUB_OUTPUT"; else echo "skip=true" >> "$GITHUB_OUTPUT"; echo "branch $HEAD is gone — nothing to open."; fi
+          fi
+
       - name: Check the model credential is present
+        if: steps.live.outputs.skip != 'true'
         env:
           MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
         run: |
@@ -121,6 +141,7 @@ jobs:
 
       # Check out the TARGET repo (the private monorepo) here, on this repo's free runner.
       - name: Check out the repo under review
+        if: steps.live.outputs.skip != 'true'
         uses: actions/checkout@v4
         with:
           repository: ${{ steps.job.outputs.repo }}
@@ -133,6 +154,7 @@ jobs:
       # gets permission_denied pulling it. The user-scoped PAT can read ghcr.io/<owner>/*
       # regardless of which repo the package is linked to. (Same reason as build-image.yml.)
       - name: Log in to ghcr
+        if: steps.live.outputs.skip != 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -140,6 +162,7 @@ jobs:
           password: ${{ secrets.PUBLISH_TOKEN }}
 
       - name: Run the reviewer
+        if: steps.live.outputs.skip != 'true'
         env:
           MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
           RUN_GITHUB_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
@@ -160,3 +183,23 @@ jobs:
             -e HEAD_REF \
             -v "${{ github.workspace }}/repo:/repo" \
             ghcr.io/${{ github.repository_owner }}/cicd-reviewer:latest
+
+      # THE MERGE — deterministic, never the model (Isaac 2026-09-06: "it cannot run an LLM to check something
+      # that git api can do"). Work is done only when it is on the default branch: the review's last line is its
+      # verdict, and a CLEAN verdict on the pull request's EXACT tip, with no conflict, is merged here (squash,
+      # the branch deleted, --match-head-commit so a push after the review is never merged unreviewed). A
+      # conflict gets one comment; a BLOCKING verdict stands for the session to fix. Logic + tests: sweep.py.
+      - name: Check out the reviewer's own scripts
+        if: steps.live.outputs.skip != 'true' && steps.job.outputs.mode == 'review'
+        uses: actions/checkout@v4
+        with:
+          path: self
+
+      - name: Merge on a CLEAN verdict
+        if: steps.live.outputs.skip != 'true' && steps.job.outputs.mode == 'review'
+        env:
+          GH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ steps.job.outputs.repo }}
+          PR: ${{ steps.job.outputs.pr }}
+        run: python3 self/sweep.py --owner "$OWNER" --repo "$REPO" --merge-pr "$PR"
