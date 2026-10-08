@@ -99,6 +99,7 @@ class Facts:
     merged_pr_tips: List[str] = field(default_factory=list)
     open_pr: Optional[dict] = None         # {number, mergeable, head_sha}
     verdict: Optional[str] = None          # the last verdict on the open PR's tip
+    publish_source: Optional[str] = None   # this repo is a PUBLISH TARGET of that subdir of the canonical home
 
 
 def decide(f: Facts) -> Plan:
@@ -109,6 +110,10 @@ def decide(f: Facts) -> Plan:
         return Plan(f.repo, b.name, "delete", "its tip is already on the default branch")
     if b.sha in f.merged_pr_tips:
         return Plan(f.repo, b.name, "delete", "a merged pull request has exactly this tip")
+    if f.publish_source:
+        n = f.open_pr["number"] if f.open_pr else None
+        return Plan(f.repo, b.name, "stuck", f"a publish target: the next publish overwrites a merge here — port the "
+                    f"work into `{f.publish_source}` of the canonical home", n)
     if f.open_pr:
         n = f.open_pr["number"]
         if f.open_pr.get("mergeable") == "CONFLICTING":
@@ -133,7 +138,20 @@ def branches_of(repo: str) -> List[Branch]:
     return [Branch(r["name"], r["sha"]) for r in rows]
 
 
-def gather(repo: str, default: str, b: Branch) -> Facts:
+def publish_targets() -> Dict[str, str]:
+    """public repo → its source subdir in the canonical home, from the publishing manifest (a merge into a target is
+    overwritten by the next publish, so a target's unmerged work belongs in the canonical home instead)."""
+    import base64
+    try:
+        raw = gh(["api", f"repos/{TRACKING_REPO}/contents/scalable-publishing/publish-manifest.json", "--jq", ".content"])
+        m = json.loads(base64.b64decode(raw))
+    except (RuntimeError, ValueError) as e:
+        raise RuntimeError(f"the publishing manifest is unreadable, so publish targets cannot be told apart: {e}")
+    units = m if isinstance(m, list) else m.get("units", m)
+    return {u["public_repo"]: u["subdir"] for u in units if u.get("public_repo")}
+
+
+def gather(repo: str, default: str, b: Branch, publish_source: Optional[str] = None) -> Facts:
     cmp = gh_json(["api", f"repos/{repo}/compare/{default}...{b.sha}", "--jq", "{ahead: .ahead_by}"]) or {}
     in_default = cmp.get("ahead") == 0
     prs = gh_json(["pr", "list", "--repo", repo, "--head", b.name, "--state", "all", "--limit", "50",
@@ -146,7 +164,7 @@ def gather(repo: str, default: str, b: Branch) -> Facts:
         reviews = gh_lines(["api", f"repos/{repo}/pulls/{open_pr['number']}/reviews", "--paginate", "--jq",
                             ".[] | {commit_id, submitted_at, body}"])
         verdict = last_verdict(reviews, open_pr["head_sha"])
-    return Facts(repo, default, b, in_default, merged_tips, open_pr, verdict)
+    return Facts(repo, default, b, in_default, merged_tips, open_pr, verdict, publish_source)
 
 
 # ── acting ──────────────────────────────────────────────────────────────────────────────────────
@@ -265,6 +283,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         merge_pr(a.repo[0], a.merge_pr, log)
         return 0
 
+    targets = publish_targets()
     repos = repos_of(a.owner)
     if a.repo:
         repos = [r for r in repos if r["nameWithOwner"] in set(a.repo)]
@@ -284,7 +303,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             if b.name == default or b.name in STANDING:
                 continue
             try:
-                p = decide(gather(repo, default, b))
+                p = decide(gather(repo, default, b, targets.get(repo)))
             except RuntimeError as e:
                 p = Plan(repo, b.name, "keep", f"could not be read this run, tried again next run: {str(e)[:120]}")
             if p.action in ("open", "review"):

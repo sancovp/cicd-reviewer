@@ -150,6 +150,18 @@ def t_merge_pr_skips_a_closed_pull_request():
     assert out == "not-open"
 
 
+def t_a_publish_target_never_gets_a_merge_or_a_pull_request():
+    p = decide(facts(publish_source="base/chaincompiler"))
+    assert p.action == "stuck" and "base/chaincompiler" in p.why
+    p = decide(facts(publish_source="x", open_pr={"number": 4, "mergeable": "MERGEABLE", "head_sha": "abc"},
+                     verdict=sweep.VERDICT_CLEAN))
+    assert p.action == "stuck" and p.pr == 4
+
+
+def t_a_publish_targets_merged_branch_is_still_deleted():
+    assert decide(facts(publish_source="x", in_default=True)).action == "delete"
+
+
 def run_all():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("t_")]
     passed = 0
