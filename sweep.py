@@ -8,7 +8,7 @@ sources, not forks, not archived). For every branch that is not the default bran
   - its tip is already in the default branch, or a MERGED pull request has exactly that tip ⇒ the work is on the
     default branch: the branch is deleted.
   - it has an OPEN pull request ⇒ when the reviewer's last verdict on that exact tip is CLEAN and the request has no
-    conflict, it is merged (squash) and the branch deleted; with a conflict, it is listed STUCK; with no verdict on
+    conflict, its repo is handed to the merge queue (merge_queue.py), which merges; with a conflict, it is listed STUCK; with no verdict on
     that tip, a review is dispatched (and `review.yml` merges it when the verdict is CLEAN).
   - it has no open pull request ⇒ one is opened (title: the branch, body: its commits) and a review dispatched.
 
@@ -120,7 +120,7 @@ def decide(f: Facts) -> Plan:
         if f.open_pr.get("mergeable") == "CONFLICTING":
             return Plan(f.repo, b.name, "stuck", "conflicts with the default branch", n)
         if f.verdict == VERDICT_CLEAN and f.open_pr.get("mergeable") == "MERGEABLE":
-            return Plan(f.repo, b.name, "merge", "the reviewer's verdict on this tip is CLEAN", n)
+            return Plan(f.repo, b.name, "merge", "the reviewer's verdict on this tip is CLEAN — handed to the merge queue", n)
         if f.verdict == VERDICT_BLOCKING:
             return Plan(f.repo, b.name, "stuck", "the reviewer's verdict is BLOCKING — fix and push", n)
         return Plan(f.repo, b.name, "review", "no verdict yet on this tip", n)
@@ -206,8 +206,7 @@ def act(p: Plan, default: str, b: Branch, owner: str, dry: bool, log: Callable[[
         if p.action == "delete":
             gh(["api", "-X", "DELETE", f"repos/{p.repo}/git/refs/heads/{b.name}"])
         elif p.action == "merge":
-            gh(["pr", "merge", str(p.pr), "--repo", p.repo, "--squash", "--delete-branch",
-                "--match-head-commit", b.sha])
+            queue_repo(p.repo, owner)
         elif p.action in ("open", "review"):
             if p.action == "open":
                 n = ahead_by(p.repo, default, b.name)
@@ -227,46 +226,16 @@ def act(p: Plan, default: str, b: Branch, owner: str, dry: bool, log: Callable[[
     return p
 
 
-def merge_pr(repo: str, pr: int, log: Callable[[str], None], wait: Callable[[float], None] = None) -> str:
-    """After a review: merge this pull request when the verdict on its exact tip is CLEAN and it has no conflict.
-    Returns what happened: merged · conflict · blocking · no-verdict · not-open · unknown."""
-    import time
-    wait = wait or time.sleep
-    view = None
-    for _ in range(10):                      # GitHub computes mergeability after a push; UNKNOWN until it has
-        view = gh_json(["pr", "view", str(pr), "--repo", repo, "--json", "state,mergeable,headRefOid,baseRefName"])
-        if view["state"] != "OPEN" or view["mergeable"] != "UNKNOWN":
-            break
-        wait(6)
-    if view["state"] != "OPEN":
-        log(f"#{pr} is {view['state']} — nothing to merge")
-        return "not-open"
-    reviews = gh_lines(["api", f"repos/{repo}/pulls/{pr}/reviews", "--paginate", "--jq",
-                        ".[] | {commit_id, submitted_at, body}"])
-    verdict = last_verdict(reviews, view["headRefOid"])
-    if view["mergeable"] == "CONFLICTING":
-        comments = gh(["api", f"repos/{repo}/issues/{pr}/comments", "--paginate", "--jq", ".[].body"])
-        marker = f"conflicts with `{view['baseRefName']}` at {view['headRefOid'][:12]}"
-        if marker not in comments:
-            gh(["pr", "comment", str(pr), "--repo", repo, "--body",
-                f"This pull request {marker}. The session working on it merges `{view['baseRefName']}` in and "
-                "resolves every conflict keeping both sides' work, then pushes (never a force push); the reviewer "
-                "reviews the new tip and merges it on a CLEAN verdict."])
-        log(f"#{pr} conflicts — commented")
-        return "conflict"
-    if verdict == VERDICT_BLOCKING:
-        log(f"#{pr} verdict BLOCKING — left for the session to fix")
-        return "blocking"
-    if verdict != VERDICT_CLEAN:
-        log(f"#{pr} has no verdict on its tip {view['headRefOid'][:12]} — not merged")
-        return "no-verdict"
-    if view["mergeable"] != "MERGEABLE":
-        log(f"#{pr} mergeability still {view['mergeable']} — not merged; the sweep tries again")
-        return "unknown"
-    gh(["pr", "merge", str(pr), "--repo", repo, "--squash", "--delete-branch",
-        "--match-head-commit", view["headRefOid"]])
-    log(f"#{pr} merged (verdict CLEAN on {view['headRefOid'][:12]})")
-    return "merged"
+_queued: set = set()
+
+
+def queue_repo(repo: str, owner: str) -> None:
+    """Hand a repo's ready pull requests to its merge queue (merge_queue.py, one run at a time per repo) — once per sweep."""
+    if repo in _queued:
+        return
+    _queued.add(repo)
+    gh(["api", "-X", "POST", f"repos/{owner}/cicd-reviewer/dispatches", "--input", "-"],
+       json.dumps({"event_type": "merge-queue", "client_payload": {"repo": repo}}))
 
 
 def tracking_body(plans: List[Plan]) -> str:
@@ -305,14 +274,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--repo", action="append", help="only these repos (owner/name); default: every source repo")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--max-reviews", type=int, default=20)
-    ap.add_argument("--merge-pr", type=int, help="only: merge this pull request of the one --repo if its verdict is CLEAN")
     a = ap.parse_args(argv)
     log = print
-    if a.merge_pr:
-        if not a.repo or len(a.repo) != 1:
-            ap.error("--merge-pr needs exactly one --repo")
-        merge_pr(a.repo[0], a.merge_pr, log)
-        return 0
 
     targets = publish_targets()
     repos = repos_of(a.owner)

@@ -184,23 +184,18 @@ jobs:
             -v "${{ github.workspace }}/repo:/repo" \
             ghcr.io/${{ github.repository_owner }}/cicd-reviewer:latest
 
-      # THE MERGE — deterministic, never the model (Isaac 2026-09-06: "it cannot run an LLM to check something
-      # that git api can do"). Work is done only when it is on the default branch: the review's last line is its
-      # verdict, and a CLEAN verdict on the pull request's EXACT tip, with no conflict, is merged here (squash,
-      # the branch deleted, --match-head-commit so a push after the review is never merged unreviewed). A
-      # conflict gets one comment; a BLOCKING verdict stands for the session to fix. Logic + tests: sweep.py.
-      # always(): the merge is decided by the verdict posted on GitHub, never by how the agent worded its last message.
-      - name: Check out the reviewer's own scripts
-        if: always() && steps.live.outputs.skip != 'true' && steps.job.outputs.mode == 'review'
-        uses: actions/checkout@v4
-        with:
-          path: self
-
-      - name: Merge on a CLEAN verdict
+      # THE HAND-OFF — this run reviews; it never merges. Merging is the merge queue's (merge-queue.yml, one run at a
+      # time per repo): a CLEAN verdict on the exact tip, still fresh against the default branch, merges there; pull
+      # requests that overlap go through the coordinator first. always(): the verdict on GitHub decides, never how the
+      # agent worded its last message.
+      - name: Hand the pull request to the merge queue
         if: always() && steps.live.outputs.skip != 'true' && steps.job.outputs.mode == 'review'
         env:
           GH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
           OWNER: ${{ github.repository_owner }}
           REPO: ${{ steps.job.outputs.repo }}
-          PR: ${{ steps.job.outputs.pr }}
-        run: python3 self/sweep.py --owner "$OWNER" --repo "$REPO" --merge-pr "$PR"
+        run: |
+          set -euo pipefail
+          jq -n --arg repo "$REPO" '{event_type:"merge-queue", client_payload:{repo:$repo}}' \
+            | gh api -X POST "repos/$OWNER/cicd-reviewer/dispatches" --input -
+          echo "Handed $REPO to its merge queue."

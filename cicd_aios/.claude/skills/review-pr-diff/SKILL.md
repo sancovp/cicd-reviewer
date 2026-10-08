@@ -41,7 +41,7 @@ You are reviewing PR `#$PR_NUMBER` on `$GITHUB_REPOSITORY`: head `$HEAD_REF` aga
    ```
    BLOCKING = at least one real correctness, security or broken-contract finding the
    author must fix. CLEAN = none (non-blocking notes may sit above it). Nothing after it.
-   The workflow reads this line and merges the pull request on CLEAN — so a missing or
+   The merge queue reads this line and merges the pull request on CLEAN — so a missing or
    misspelled verdict leaves the work unmerged. GitHub refuses `--approve` and
    `--request-changes` from the account that owns the pull request, so post with
    `--comment`; the verdict line is what decides.

@@ -81,6 +81,11 @@ def t_done_is_recognised_in_any_case():
     assert '"done" not in (text or "").lower()' in src
 
 
+def t_coordinate_prompt_names_the_skill_the_output_and_forbids_acting():
+    p = ci_agent._coordinate_prompt("o/r", '[{"number": 1}]')
+    assert "coordinate-merges" in p and "/out/decision.json" in p and "do not merge" in p and "o/r" in p
+
+
 def run_all():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("t_")]
     passed = 0

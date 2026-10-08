@@ -1,0 +1,72 @@
+name: Merge queue
+
+# ─────────────────────────────────────────────────────────────────────────────────────────
+# ONE MERGE AT A TIME PER REPO. Reviews run in parallel because they only read; merging runs here, one run per repo
+# at a time (the concurrency group), so two CLEAN verdicts can never both merge against a main that only one of them
+# saw. merge_queue.py: a CLEAN verdict counts only when nothing has landed on the default branch since it touching
+# the pull request's files (else it is reviewed again); ready pull requests that share files go to the COORDINATOR —
+# the reviewer in MODE=coordinate — for their order and any holds; the first merges and the rest are reviewed again
+# against the new main. Dispatched by every review (review.yml) and by the daily sweep.
+#
+# Authored in the monorepo at automation/cicd-reviewer/.github/workflows/ and mirrored out by scalable-publishing.
+# ⚠ SECURITY: repository_dispatch and workflow_dispatch only — never a fork-reachable trigger (see review.yml).
+# ─────────────────────────────────────────────────────────────────────────────────────────
+
+on:
+  repository_dispatch:
+    types: [merge-queue]
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: "owner/name of the repo whose queue to run"
+        required: true
+      dry_run:
+        description: "true = say what it would do, change nothing"
+        required: false
+        default: "false"
+
+concurrency:
+  group: merge-queue-${{ github.event.client_payload.repo || github.event.inputs.repo }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  queue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Resolve the repo
+        id: job
+        env:
+          OWNER: ${{ github.repository_owner }}
+          P_REPO: ${{ github.event.client_payload.repo }}
+          I_REPO: ${{ github.event.inputs.repo }}
+        run: |
+          set -euo pipefail
+          REPO="${P_REPO:-$I_REPO}"
+          case "$REPO" in "$OWNER"/*) : ;; *) echo "::error::refusing '$REPO' — not owned by $OWNER"; exit 1 ;; esac
+          echo "repo=$REPO" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+
+      # the coordinator runs in the reviewer's image (same as the reviews)
+      - name: Log in to ghcr
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.PUBLISH_TOKEN }}
+
+      - name: Run the queue
+        env:
+          GH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          REPO: ${{ steps.job.outputs.repo }}
+          DRY: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+          ARGS=(--repo "$REPO")
+          [ "$DRY" = "true" ] && ARGS+=(--dry-run)
+          python3 merge_queue.py "${ARGS[@]}"

@@ -12,7 +12,9 @@ You have `git` and `gh` via bash on a real repo at `/repo`. Hard limits:
   then `gh pr create`.
 - **In `MODE=review` you do not modify code** — you read the diff and post a review ending in
   its `VERDICT:` line. Do not push commits, do not open PRs, do not edit files in `/repo`, and
-  do not merge: the workflow merges on a CLEAN verdict (`sweep.py --merge-pr`), deterministically.
+  do not merge: the merge queue (`merge_queue.py`) merges a CLEAN verdict, one at a time, deterministically.
+- **In `MODE=coordinate` you write exactly one file, `/out/decision.json`**, and nothing else: no merge, push,
+  comment or review.
 - **In `MODE=harvest` you may create exactly ONE new file**, and only under your own AIOS
   rules dir (`automation/cicd-reviewer/cicd_aios/.claude/rules/`), on a fresh
   `cicd-rules/<slug>` branch off the default branch, committed with an explicit

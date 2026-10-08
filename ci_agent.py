@@ -11,7 +11,8 @@ UnifiedChat + History, tools=[BashTool], provider=ANTHROPIC, model=MiniMax-M3). 
 is auto-selected by unified_chat.py when model starts with "minimax" (needs MINIMAX_API_KEY).
 
 Env:
-  MODE               review | pr | harvest   (which task to run)
+  MODE               review | pr | harvest | coordinate   (which task to run)
+  COORD_INPUT        (coordinate mode) JSON list of the overlapping CLEAN pull requests
   REPO_DIR           checked-out repo path (default /repo)
   GITHUB_REPOSITORY  owner/name
   PR_NUMBER          (review mode) the PR to review
@@ -85,6 +86,18 @@ def _harvest_prompt(repo, gh_repo):
     )
 
 
+def _coordinate_prompt(gh_repo, prs_json):
+    return (
+        f"MODE=coordinate. You are the MERGE COORDINATOR for {gh_repo}. Each of these open pull requests was reviewed "
+        f"CLEAN on its own, and they touch overlapping files, so they cannot all merge without someone judging them "
+        f"together: {prs_json}. Follow the `coordinate-merges` skill: read every one's diff with `gh pr diff <n> --repo "
+        f"{gh_repo}`, decide the ORDER to merge them in and which (if any) must be HELD because it contradicts another, "
+        f"undoes another, or would break combined with another — each hold with a one-sentence reason naming the other "
+        f"pull request. Write ONLY the JSON {{\"order\": [numbers], \"hold\": [{{\"pr\": n, \"reason\": \"...\"}}]}} "
+        f"to /out/decision.json with a quoted heredoc. You do not merge, push, comment or review. End with DONE."
+    )
+
+
 def build_agent():
     from heaven_base import BaseHeavenAgent, HeavenAgentConfig, UnifiedChat, ProviderEnum
     from heaven_base.memory.history import History
@@ -136,8 +149,10 @@ def main():
         prompt = _pr_prompt(repo, gh_repo, os.environ.get("HEAD_REF", ""))
     elif mode == "harvest":
         prompt = _harvest_prompt(repo, gh_repo)
+    elif mode == "coordinate":
+        prompt = _coordinate_prompt(gh_repo, os.environ.get("COORD_INPUT", "[]"))
     else:
-        sys.exit(f"FATAL: MODE must be 'review', 'pr' or 'harvest', got {mode!r}")
+        sys.exit(f"FATAL: MODE must be 'review', 'pr', 'harvest' or 'coordinate', got {mode!r}")
 
     log.info("mode=%s repo=%s gh_repo=%s model=%s cwd=%s",
              mode, repo, gh_repo, os.environ.get("CICD_MODEL", "MiniMax-M3"), os.getcwd())
