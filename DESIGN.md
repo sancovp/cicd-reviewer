@@ -55,7 +55,14 @@ for porting into its source in the canonical home. What it cannot move is rewrit
 - The model never does what git's API can do (whether a pull request exists, whether a tip is on main, mergeability).
 - A verdict counts only on the exact tip, and only while fresh.
 
-## 6. Proof
+## 6. How a session works with it
+
+A session opens its pull request and waits for the queue: a BLOCKING verdict it fixes and pushes, a conflict it
+resolves by merging the default branch in (both sides kept) and pushes, and it confirms the pull request MERGED before
+it ends. It never merges ahead of the queue. Where no review runs, it merges itself. The session's side of this is the
+rule `top-level-session-worktree` (THE GIT LOOP).
+
+## 7. Proof
 
 `tests/test_merge_queue.py` (16: groups, freshness, the coordinator's decision and its fallback, holds, conflicts,
 dry runs, run() against a fake GitHub — the freshness and grouping tests fail with those checks removed) ·
