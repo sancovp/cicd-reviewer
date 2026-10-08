@@ -24,6 +24,10 @@ on:
         description: "true = say what it would do, change nothing"
         required: false
         default: "false"
+      coordinate:
+        description: "only ask the coordinator about these PRs (e.g. 12,15) and print its decision; acts on nothing"
+        required: false
+        default: ""
 
 concurrency:
   group: merge-queue-${{ github.event.client_payload.repo || github.event.inputs.repo }}
@@ -65,8 +69,10 @@ jobs:
           MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
           REPO: ${{ steps.job.outputs.repo }}
           DRY: ${{ github.event.inputs.dry_run || 'false' }}
+          COORD: ${{ github.event.inputs.coordinate || '' }}
         run: |
           set -euo pipefail
           ARGS=(--repo "$REPO")
           [ "$DRY" = "true" ] && ARGS+=(--dry-run)
+          [ -n "$COORD" ] && ARGS+=(--coordinate "$COORD")
           python3 merge_queue.py "${ARGS[@]}"

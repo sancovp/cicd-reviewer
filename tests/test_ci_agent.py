@@ -81,6 +81,16 @@ def t_done_is_recognised_in_any_case():
     assert '"done" not in (text or "").lower()' in src
 
 
+def t_a_review_counts_only_with_a_verdict_on_the_tip_posted_this_run():
+    vp = ci_agent.verdict_posted
+    ok = {"commit_id": "t", "submitted_at": "2026-01-02T00:00:00Z", "body": "fine\nVERDICT: CLEAN"}
+    assert vp([ok], "t", "2026-01-01T00:00:00Z")
+    assert not vp([ok], "other", "2026-01-01T00:00:00Z")                 # another tip
+    assert not vp([ok], "t", "2026-01-03T00:00:00Z")                     # posted before this run
+    assert not vp([dict(ok, body="fine, but no verdict")], "t", "2026-01-01T00:00:00Z")
+    assert not vp([], "t", "2026-01-01T00:00:00Z")
+
+
 def t_coordinate_prompt_names_the_skill_the_output_and_forbids_acting():
     p = ci_agent._coordinate_prompt("o/r", '[{"number": 1}]')
     assert "coordinate-merges" in p and "/out/decision.json" in p and "do not merge" in p and "o/r" in p

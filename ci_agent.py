@@ -133,6 +133,32 @@ def extract_text(result):
     return ""
 
 
+VERDICT_LINES = ("VERDICT: CLEAN", "VERDICT: BLOCKING")
+
+
+def verdict_posted(reviews, head_sha, since_iso):
+    """True when a review on exactly this tip, posted since the run began, ends in a verdict line. The deliverable is
+    checked on GitHub, never inferred from the agent's last words."""
+    for rv in reviews or []:
+        if rv.get("commit_id") != head_sha or (rv.get("submitted_at") or "") < since_iso:
+            continue
+        lines = [l.strip() for l in (rv.get("body") or "").strip().splitlines() if l.strip()]
+        if lines and lines[-1] in VERDICT_LINES:
+            return True
+    return False
+
+
+def _review_landed(gh_repo, pr, since_iso):
+    import json
+    import subprocess
+    head = subprocess.run(["gh", "pr", "view", str(pr), "--repo", gh_repo, "--json", "headRefOid", "-q", ".headRefOid"],
+                          capture_output=True, text=True).stdout.strip()
+    out = subprocess.run(["gh", "api", f"repos/{gh_repo}/pulls/{pr}/reviews", "--paginate", "--jq",
+                          ".[] | {commit_id, submitted_at, body}"], capture_output=True, text=True).stdout
+    reviews = [json.loads(l) for l in out.splitlines() if l.strip()]
+    return verdict_posted(reviews, head, since_iso)
+
+
 def main():
     mode = os.environ.get("MODE", "").strip().lower()
     repo = os.environ.get("REPO_DIR", "/repo")
@@ -156,13 +182,21 @@ def main():
 
     log.info("mode=%s repo=%s gh_repo=%s model=%s cwd=%s",
              mode, repo, gh_repo, os.environ.get("CICD_MODEL", "MiniMax-M3"), os.getcwd())
+    from datetime import datetime, timezone
+    started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     agent = build_agent()
     log.info("agent built; running review loop (max_tool_calls=40)")
     result = asyncio.run(agent.run(prompt=prompt))
     text = extract_text(result)
     print("=== CICD Reviewer output ===")
     print(text)
-    if "done" not in (text or "").lower():
+    if mode == "review":
+        # THE DELIVERABLE IS A POSTED VERDICT. A run whose review never reached the pull request (a shell error while
+        # posting, a model that gave up) is a failure whatever the agent said, so the workflow tries again.
+        if not _review_landed(gh_repo, os.environ.get("PR_NUMBER", ""), started):
+            log.error("no review with a verdict line reached the pull request's tip — run incomplete")
+            sys.exit("FATAL: no verdict was posted on the pull request's tip.")
+    elif "done" not in (text or "").lower():
         # The agent did not signal completion — surface as failure so CI is not silently green.
         log.error("agent did not emit DONE — run incomplete")
         sys.exit("FATAL: agent did not emit DONE — treating run as incomplete.")

@@ -245,7 +245,19 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--repo", required=True)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--coordinate", help="only: ask the coordinator about these open pull requests (e.g. 12,15), "
+                                         "print its decision, act on nothing")
     a = ap.parse_args(argv)
+    if a.coordinate:
+        base = gh_json(["repo", "view", a.repo, "--json", "defaultBranchRef"])["defaultBranchRef"]["name"]
+        want = {int(n) for n in a.coordinate.split(",") if n.strip()}
+        group = [p for p in open_prs(a.repo, base) if p.number in want]
+        decision = coordinate_with_reviewer(a.repo, group, print)
+        print("decision:", json.dumps(decision))
+        first, holds, rereview = apply_decision(group, decision)
+        print("would merge first:", first.number if first else None, "· hold:", [(p.number, r) for p, r in holds],
+              "· re-review:", [p.number for p in rereview])
+        return 0
     run(a.repo, a.dry_run)
     return 0
 
