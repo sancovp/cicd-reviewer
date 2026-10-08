@@ -38,6 +38,8 @@ One run at a time per repository (the workflow's concurrency group), dispatched 
 - **A CONFLICT** gets one comment; the session that owns the work merges the default branch in, keeping both sides,
   and pushes.
 - Every merge is a squash at the reviewed tip (`--match-head-commit`), the branch deleted. Never a force push.
+- **A REVIEW THAT CANNOT RUN** (the model refuses, the run fails) leaves no verdict, so nothing merges: the pull request
+  waits, and the next sweep dispatches its review again.
 
 ## 4. The sweep (`sweep.py` · `.github/workflows/sweep.yml`)
 
