@@ -173,6 +173,13 @@ def t_conflicting_blocking_and_unreviewed_never_merge():
     assert merges == [] and rep["conflict"] == [1] and sorted(rep["waiting"]) == [2, 3] and len(comments) == 1
 
 
+def t_the_standing_branch_is_never_touched():
+    p = ghpr(9, {"a"}, mergeable="CONFLICTING")
+    p["headRefName"] = "om-is-the-base"
+    rep, merges, disp, comments = _run([p])
+    assert comments == [] and merges == [] and 9 not in sum(rep.values(), [])
+
+
 def t_dry_run_changes_nothing():
     gh, calls = fake_github([ghpr(1, {"a"}), ghpr(2, {"a"})])
     mq.gh = gh

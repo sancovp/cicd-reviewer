@@ -31,7 +31,7 @@ import tempfile
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Set
 
-from sweep import VERDICT_BLOCKING, VERDICT_CLEAN, _space_out, gh, gh_json, gh_lines, verdict_of
+from sweep import STANDING, VERDICT_BLOCKING, VERDICT_CLEAN, _space_out, gh, gh_json, gh_lines, verdict_of
 
 HELD = "held by the merge coordinator at"
 CONFLICT = "conflicts with"
@@ -194,6 +194,8 @@ def run(repo: str, dry: bool = False, log: Callable[[str], None] = print,
     report: Dict[str, list] = {"merged": [], "rereview": [], "held": [], "conflict": [], "waiting": []}
     ready: List[PR] = []
     for p in open_prs(repo, base):
+        if p.branch in STANDING:               # the standing branch is never queued, commented on or merged
+            continue
         if p.mergeable == "CONFLICTING":
             marker = f"{CONFLICT} `{base}` at {p.head[:12]}"
             comment_once(repo, p, marker, f"This pull request {marker}. The session working on it merges `{base}` in "
