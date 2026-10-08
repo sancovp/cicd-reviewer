@@ -147,7 +147,7 @@ def main():
     text = extract_text(result)
     print("=== CICD Reviewer output ===")
     print(text)
-    if "DONE" not in (text or ""):
+    if "done" not in (text or "").lower():
         # The agent did not signal completion — surface as failure so CI is not silently green.
         log.error("agent did not emit DONE — run incomplete")
         sys.exit("FATAL: agent did not emit DONE — treating run as incomplete.")

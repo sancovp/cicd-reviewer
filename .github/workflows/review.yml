@@ -189,14 +189,15 @@ jobs:
       # verdict, and a CLEAN verdict on the pull request's EXACT tip, with no conflict, is merged here (squash,
       # the branch deleted, --match-head-commit so a push after the review is never merged unreviewed). A
       # conflict gets one comment; a BLOCKING verdict stands for the session to fix. Logic + tests: sweep.py.
+      # always(): the merge is decided by the verdict posted on GitHub, never by how the agent worded its last message.
       - name: Check out the reviewer's own scripts
-        if: steps.live.outputs.skip != 'true' && steps.job.outputs.mode == 'review'
+        if: always() && steps.live.outputs.skip != 'true' && steps.job.outputs.mode == 'review'
         uses: actions/checkout@v4
         with:
           path: self
 
       - name: Merge on a CLEAN verdict
-        if: steps.live.outputs.skip != 'true' && steps.job.outputs.mode == 'review'
+        if: always() && steps.live.outputs.skip != 'true' && steps.job.outputs.mode == 'review'
         env:
           GH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
           OWNER: ${{ github.repository_owner }}

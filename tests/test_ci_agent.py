@@ -76,6 +76,11 @@ def t_review_prompt_demands_the_verdict_line():
     assert "VERDICT: CLEAN" in p and "VERDICT: BLOCKING" in p and "--comment" in p
 
 
+def t_done_is_recognised_in_any_case():
+    src = open(_CI_AGENT).read()
+    assert '"done" not in (text or "").lower()' in src
+
+
 def run_all():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("t_")]
     passed = 0

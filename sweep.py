@@ -151,9 +151,24 @@ def publish_targets() -> Dict[str, str]:
     return {u["public_repo"]: u["subdir"] for u in units if u.get("public_repo")}
 
 
+COMPARE = ("query($o:String!,$n:String!,$b:String!,$h:String!){repository(owner:$o,name:$n){"
+           "ref(qualifiedName:$b){compare(headRef:$h){aheadBy}}}}")
+
+
+def ahead_by(repo: str, default: str, branch: str) -> int:
+    """How many commits the branch has that the default branch lacks. GraphQL's comparison counts without building
+    the diff — REST's compare answers 500 on a large one, which left those branches unread."""
+    owner, name = repo.split("/", 1)
+    out = gh_json(["api", "graphql", "-f", f"query={COMPARE}", "-f", f"o={owner}", "-f", f"n={name}",
+                   "-f", f"b=refs/heads/{default}", "-f", f"h=refs/heads/{branch}"])
+    cmp = (((out or {}).get("data") or {}).get("repository") or {}).get("ref") or {}
+    if not cmp.get("compare"):
+        raise RuntimeError(f"no comparison for {branch} against {default}")
+    return int(cmp["compare"]["aheadBy"])
+
+
 def gather(repo: str, default: str, b: Branch, publish_source: Optional[str] = None) -> Facts:
-    cmp = gh_json(["api", f"repos/{repo}/compare/{default}...{b.sha}", "--jq", "{ahead: .ahead_by}"]) or {}
-    in_default = cmp.get("ahead") == 0
+    in_default = ahead_by(repo, default, b.name) == 0
     prs = gh_json(["pr", "list", "--repo", repo, "--head", b.name, "--state", "all", "--limit", "50",
                    "--json", "number,state,headRefOid,mergeable"]) or []
     merged_tips = [p["headRefOid"] for p in prs if p["state"] == "MERGED"]
@@ -180,12 +195,12 @@ def act(p: Plan, default: str, b: Branch, owner: str, dry: bool, log: Callable[[
                 "--match-head-commit", b.sha])
         elif p.action in ("open", "review"):
             if p.action == "open":
-                commits = gh(["api", f"repos/{p.repo}/compare/{default}...{b.sha}",
-                              "--jq", ".commits[] | \"- \" + (.commit.message | split(\"\\n\")[0])"])
+                n = ahead_by(p.repo, default, b.name)
                 url = gh(["pr", "create", "--repo", p.repo, "--head", b.name, "--base", default,
                           "--title", b.name, "--body",
-                          "Opened by the sweep: this branch had work not on the default branch and no pull "
-                          "request.\n\n" + commits[:60000]]).strip()
+                          f"Opened by the sweep: this branch has {n} commit(s) not on `{default}` and had no pull "
+                          "request. The reviewer reviews it; a CLEAN verdict on its tip with no conflict merges it."
+                          ]).strip()
                 p.pr = int(url.rstrip("/").split("/")[-1])
             payload = json.dumps({"event_type": "review-pr", "client_payload": {
                 "repo": p.repo, "pr_number": str(p.pr), "base_ref": default, "head_ref": b.name}})
