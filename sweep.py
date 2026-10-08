@@ -32,6 +32,7 @@ TRACKING_REPO = "sancovp/sanctuary-revolution-alpha"
 TRACKING_TITLE = "UNMERGED WORK"
 VERDICT_CLEAN = "VERDICT: CLEAN"
 VERDICT_BLOCKING = "VERDICT: BLOCKING"
+REVIEW_SPACING = 180   # seconds between dispatched reviews: the model refuses (429) reviews fired all at once
 
 
 def gh(args: List[str], input_text: Optional[str] = None) -> str:
@@ -184,7 +185,21 @@ def gather(repo: str, default: str, b: Branch, publish_source: Optional[str] = N
 
 # ── acting ──────────────────────────────────────────────────────────────────────────────────────
 
-def act(p: Plan, default: str, b: Branch, owner: str, dry: bool, log: Callable[[str], None]) -> Plan:
+_last_dispatch = [0.0]
+
+
+def _space_out(wait: Callable[[float], None], now: Callable[[], float]) -> None:
+    """Hold each review dispatch REVIEW_SPACING seconds after the last, so the reviews run one after another."""
+    gap = REVIEW_SPACING - (now() - _last_dispatch[0])
+    if _last_dispatch[0] and gap > 0:
+        wait(gap)
+    _last_dispatch[0] = now()
+
+
+def act(p: Plan, default: str, b: Branch, owner: str, dry: bool, log: Callable[[str], None],
+        wait: Callable[[float], None] = None, now: Callable[[], float] = None) -> Plan:
+    import time
+    wait, now = wait or time.sleep, now or time.time
     if dry or p.action in ("keep", "stuck"):
         return p
     try:
@@ -202,6 +217,7 @@ def act(p: Plan, default: str, b: Branch, owner: str, dry: bool, log: Callable[[
                           "request. The reviewer reviews it; a CLEAN verdict on its tip with no conflict merges it."
                           ]).strip()
                 p.pr = int(url.rstrip("/").split("/")[-1])
+            _space_out(wait, now)
             payload = json.dumps({"event_type": "review-pr", "client_payload": {
                 "repo": p.repo, "pr_number": str(p.pr), "base_ref": default, "head_ref": b.name}})
             gh(["api", "-X", "POST", f"repos/{owner}/cicd-reviewer/dispatches", "--input", "-"], payload)

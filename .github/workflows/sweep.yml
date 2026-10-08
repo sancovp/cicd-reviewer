@@ -28,7 +28,7 @@ on:
       max_reviews:
         description: "reviews dispatched at most this run"
         required: false
-        default: "20"
+        default: "10"
 
 concurrency:
   group: sweep
@@ -40,6 +40,7 @@ permissions:
 jobs:
   sweep:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - name: Sweep every repository
@@ -48,7 +49,7 @@ jobs:
           OWNER: ${{ github.repository_owner }}
           DRY: ${{ github.event.inputs.dry_run || 'false' }}
           ONLY: ${{ github.event.inputs.repo || '' }}
-          MAXR: ${{ github.event.inputs.max_reviews || '20' }}
+          MAXR: ${{ github.event.inputs.max_reviews || '10' }}
         run: |
           set -euo pipefail
           ARGS=(--owner "$OWNER" --max-reviews "$MAXR")

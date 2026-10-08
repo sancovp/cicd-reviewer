@@ -162,6 +162,15 @@ def t_a_publish_targets_merged_branch_is_still_deleted():
     assert decide(facts(publish_source="x", in_default=True)).action == "delete"
 
 
+def t_reviews_are_dispatched_one_spacing_apart():
+    waits, clock = [], [1000.0]
+    sweep._last_dispatch[0] = 0.0
+    sweep._space_out(lambda s: (waits.append(s), clock.__setitem__(0, clock[0] + s)), lambda: clock[0])
+    clock[0] += 10
+    sweep._space_out(lambda s: (waits.append(s), clock.__setitem__(0, clock[0] + s)), lambda: clock[0])
+    assert waits == [sweep.REVIEW_SPACING - 10], waits
+
+
 def run_all():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("t_")]
     passed = 0
