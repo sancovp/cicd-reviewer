@@ -26,6 +26,9 @@ import logging
 import os
 import sys
 
+MAX_TOOL_CALLS = int(os.environ.get("CICD_MAX_TOOL_CALLS", "80"))
+POST_BY = MAX_TOOL_CALLS - 10   # the review is posted by this call at the latest: an unposted review is worth nothing
+
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s cicd_reviewer: %(message)s"
 )
@@ -46,7 +49,9 @@ def _review_prompt(repo, gh_repo, pr, base, head):
         f"`{base}`. The repo is checked out at {repo}. Follow the `review-pr-diff` skill: read "
         f"the diff, find real correctness/security/contract issues per your review-discipline "
         f"rule (cite path:line, trace each to an exact symptom, drop vague ones), and post your "
-        f"review with `gh pr review {pr} --repo {gh_repo} --comment`. The review's LAST LINE must be "
+        f"review with `gh pr review {pr} --repo {gh_repo} --comment` — by your tool call {POST_BY} at the latest: "
+        f"you have {MAX_TOOL_CALLS}, and a review you never post is worth nothing, so on a large pull request read "
+        f"the diff and the riskiest files first, then post what you found. The review's LAST LINE must be "
         f"exactly `VERDICT: CLEAN` (no blocking finding) or `VERDICT: BLOCKING` (at least one real "
         f"correctness/security/contract finding) — the workflow merges the pull request on CLEAN. "
         f"End with DONE."
@@ -116,7 +121,7 @@ def build_agent():
     )
     # max_tool_calls high enough for a real review loop (git diff, cat context, gh post).
     return BaseHeavenAgent(
-        config, UnifiedChat, history=History(messages=[]), adk=False, max_tool_calls=40
+        config, UnifiedChat, history=History(messages=[]), adk=False, max_tool_calls=MAX_TOOL_CALLS
     )
 
 
@@ -185,7 +190,7 @@ def main():
     from datetime import datetime, timezone
     started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     agent = build_agent()
-    log.info("agent built; running review loop (max_tool_calls=40)")
+    log.info("agent built; running review loop (max_tool_calls=%d)", MAX_TOOL_CALLS)
     result = asyncio.run(agent.run(prompt=prompt))
     text = extract_text(result)
     print("=== CICD Reviewer output ===")

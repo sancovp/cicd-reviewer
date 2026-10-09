@@ -96,6 +96,11 @@ def t_coordinate_prompt_names_the_skill_the_output_and_forbids_acting():
     assert "coordinate-merges" in p and "/out/decision.json" in p and "do not merge" in p and "o/r" in p
 
 
+def t_review_prompt_states_the_budget_and_the_post_by_call():
+    p = ci_agent._review_prompt("/repo", "o/r", "7", "main", "work")
+    assert str(ci_agent.MAX_TOOL_CALLS) in p and str(ci_agent.POST_BY) in p and ci_agent.POST_BY < ci_agent.MAX_TOOL_CALLS
+
+
 def run_all():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("t_")]
     passed = 0

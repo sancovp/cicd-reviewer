@@ -9,6 +9,10 @@ You are reviewing PR `#$PR_NUMBER` on `$GITHUB_REPOSITORY`: head `$HEAD_REF` aga
 
 ## Steps
 
+⛔ **POST BEFORE YOUR TOOL CALLS RUN OUT.** Your prompt states your budget and the call by which the review must be
+posted. On a large pull request do not read every file: read the diff, open the riskiest changes, then post. A review
+you never post is worth nothing — the pull request cannot merge without its verdict.
+
 1. **Get the diff** (base..head, so you see only what this PR changes):
    ```
    git -C /repo fetch origin "$BASE_REF" "$HEAD_REF"
