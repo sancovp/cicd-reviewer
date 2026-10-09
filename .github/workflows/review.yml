@@ -173,8 +173,9 @@ jobs:
           HEAD_REF: ${{ steps.job.outputs.head }}
         run: |
           set -uo pipefail
-          # The run is checked on GitHub (ci_agent: a verdict on the tip, posted this run). One failed attempt —
-          # a shell error while posting, a model that gave up — gets a second, after a pause.
+          # The agent runs in heaven's agent mode until its goal is accomplished; the run is then checked in the world
+          # (ci_agent: a verdict on the tip, posted this run). A run that ends without it — a crash, a model that gave
+          # up — gets one more attempt, after a pause.
           for attempt in 1 2; do
           docker run --rm \
             -e MODE \
@@ -186,7 +187,7 @@ jobs:
             -e HEAD_REF \
             -v "${{ github.workspace }}/repo:/repo" \
             ghcr.io/${{ github.repository_owner }}/cicd-reviewer:latest && exit 0
-          echo "attempt $attempt did not land a verdict"; sleep 60
+          echo "attempt $attempt ended without its result"; sleep 60
           done
           exit 1
 

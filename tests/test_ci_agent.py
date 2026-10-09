@@ -76,11 +76,6 @@ def t_review_prompt_demands_the_verdict_line():
     assert "VERDICT: CLEAN" in p and "VERDICT: BLOCKING" in p and "--comment" in p
 
 
-def t_done_is_recognised_in_any_case():
-    src = open(_CI_AGENT).read()
-    assert '"done" not in (text or "").lower()' in src
-
-
 def t_a_review_counts_only_with_a_verdict_on_the_tip_posted_this_run():
     vp = ci_agent.verdict_posted
     ok = {"commit_id": "t", "submitted_at": "2026-01-02T00:00:00Z", "body": "fine\nVERDICT: CLEAN"}
@@ -96,9 +91,23 @@ def t_coordinate_prompt_names_the_skill_the_output_and_forbids_acting():
     assert "coordinate-merges" in p and "/out/decision.json" in p and "do not merge" in p and "o/r" in p
 
 
-def t_review_prompt_states_the_budget_and_the_post_by_call():
-    p = ci_agent._review_prompt("/repo", "o/r", "7", "main", "work")
-    assert str(ci_agent.MAX_TOOL_CALLS) in p and str(ci_agent.POST_BY) in p and ci_agent.POST_BY < ci_agent.MAX_TOOL_CALLS
+def t_the_agent_runs_in_heavens_agent_mode_with_many_rounds():
+    import re
+    cmd = ci_agent.agent_mode("review PR #7, then post it")
+    m = re.search(r"agent goal=(.*?), iterations=(\d+)", cmd, re.IGNORECASE | re.DOTALL)   # heaven's own parser
+    assert m and m.group(1) == "review PR #7, then post it" and int(m.group(2)) >= 50
+    assert ci_agent.ROUND_STEPS <= 20
+
+
+def t_no_single_round_run_and_the_result_is_checked():
+    src = open(_CI_AGENT).read()
+    assert "POST_BY" not in src and "MAX_TOOL_CALLS" not in src
+    assert "agent.run(prompt=agent_mode(prompt))" in src and "if not result_exists(" in src
+
+
+def t_harvest_alone_reads_its_result_off_the_text():
+    assert ci_agent.result_exists("harvest", "all done", "o/r", "x")
+    assert not ci_agent.result_exists("harvest", "still working", "o/r", "x")
 
 
 def run_all():

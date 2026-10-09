@@ -68,10 +68,11 @@ created: a session opens its own PR, and the sweep opens one for a branch left w
 | **THE REVIEWER** (`MODE=review`) | one PR's diff | its verdict: the review's last line, `VERDICT: CLEAN` or `VERDICT: BLOCKING`, posted with `--comment` (GitHub refuses approve / request-changes from the account that owns the PR) | `cicd_aios/.claude/skills/review-pr-diff` |
 | **THE COORDINATOR** (`MODE=coordinate`) | every ready, fresh PR that shares files with another | their merge order, and which to HOLD (contradicts, undoes or breaks with another), each with a one-sentence reason — written to `/out/decision.json` | `cicd_aios/.claude/skills/coordinate-merges` |
 
-A review run succeeds only when a review ending in a verdict line is on the PR's tip, posted during the run
-(`ci_agent.verdict_posted`); a failed attempt gets a second. The reviewer has 80 tool calls (`CICD_MAX_TOOL_CALLS`)
-and posts its review by call 70 at the latest — on a large PR it reads the diff and the riskiest changes first —
-because a review it never posts leaves the PR with no verdict, and nothing merges without one. A review never merges. The coordinator never merges,
+Both tiers run in heaven's AGENT MODE: one conversation, up to 100 rounds (`CICD_ITERATIONS`) of at most 15 tool calls
+each (`CICD_ROUND_STEPS`), ending when the agent declares its goal accomplished — so a large PR is read in as many rounds
+as it needs; there is no step limit on the run. A run succeeds only when its result exists in the world — a review
+ending in a verdict line on the PR's tip, posted during the run (`ci_agent.verdict_posted`); the coordinator's
+`/out/decision.json` — never because of what the agent said; a run without its result gets one more attempt. A review never merges. The coordinator never merges,
 comments or reviews; the queue acts on its file, and with no decision falls back to oldest first, nothing held.
 
 ## 5. The merge queue (`merge_queue.py` · `.github/workflows/merge-queue.yml`)
@@ -143,7 +144,7 @@ edits the issue). This directory is authored in the canonical home at `automatio
 | a PR merged before its review ran, so the review failed on a deleted branch | sessions never merge; the review skips a closed or draft PR |
 | 14 reviews at once, all refused by the model (429) | reviews dispatched 3 min apart, ≤10 a sweep |
 | the agent said "Done." / a "done" inside an error, and the run's result was misread | the run checks GitHub for the posted verdict |
-| on a large PR the reviewer spent its 40 tool calls reading and never posted (#1500) | 80 calls, the review posted by call 70 |
+| on a large PR the reviewer spent its 40 tool calls in ONE round and stopped before posting (#1500) — a plain prompt runs heaven's single round | heaven's agent mode: up to 100 rounds of 15 calls, one conversation, until the goal is accomplished |
 | independent CLEAN verdicts wrong together (#1465 / #1470) | freshness; one merge at a time; the coordinator |
 | a merge into a publish target would be overwritten by the next publish | the sweep lists those branches for porting |
 | REST compare answered 500 on large diffs | GraphQL's comparison |

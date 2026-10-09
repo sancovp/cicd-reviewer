@@ -26,8 +26,11 @@ import logging
 import os
 import sys
 
-MAX_TOOL_CALLS = int(os.environ.get("CICD_MAX_TOOL_CALLS", "80"))
-POST_BY = MAX_TOOL_CALLS - 10   # the review is posted by this call at the latest: an unposted review is worth nothing
+# THE AGENT RUNS IN HEAVEN'S AGENT MODE — one conversation, ITERATIONS rounds of at most ROUND_STEPS tool calls each,
+# ending when the agent declares its goal accomplished (heaven's TaskSystemTool). A plain prompt would run ONE round,
+# so a large job stopped half-way; `agent goal=…, iterations=N` is heaven's own form for running until done.
+ROUND_STEPS = int(os.environ.get("CICD_ROUND_STEPS", "15"))
+ITERATIONS = int(os.environ.get("CICD_ITERATIONS", "100"))
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s cicd_reviewer: %(message)s"
@@ -49,9 +52,7 @@ def _review_prompt(repo, gh_repo, pr, base, head):
         f"`{base}`. The repo is checked out at {repo}. Follow the `review-pr-diff` skill: read "
         f"the diff, find real correctness/security/contract issues per your review-discipline "
         f"rule (cite path:line, trace each to an exact symptom, drop vague ones), and post your "
-        f"review with `gh pr review {pr} --repo {gh_repo} --comment` — by your tool call {POST_BY} at the latest: "
-        f"you have {MAX_TOOL_CALLS}, and a review you never post is worth nothing, so on a large pull request read "
-        f"the diff and the riskiest files first, then post what you found. The review's LAST LINE must be "
+        f"review with `gh pr review {pr} --repo {gh_repo} --comment`. The review's LAST LINE must be "
         f"exactly `VERDICT: CLEAN` (no blocking finding) or `VERDICT: BLOCKING` (at least one real "
         f"correctness/security/contract finding) — the workflow merges the pull request on CLEAN. "
         f"End with DONE."
@@ -118,7 +119,7 @@ def build_agent():
     )
     # max_tool_calls high enough for a real review loop (git diff, cat context, gh post).
     return BaseHeavenAgent(
-        config, UnifiedChat, history=History(messages=[]), adk=False, max_tool_calls=MAX_TOOL_CALLS
+        config, UnifiedChat, history=History(messages=[]), adk=False, max_tool_calls=ROUND_STEPS
     )
 
 
@@ -161,6 +162,39 @@ def _review_landed(gh_repo, pr, since_iso):
     return verdict_posted(reviews, head, since_iso)
 
 
+def _coordinate_done() -> bool:
+    import json
+    try:
+        with open("/out/decision.json") as f:
+            return isinstance(json.load(f), dict)
+    except (OSError, ValueError):
+        return False
+
+
+def _pr_opened(gh_repo, head) -> bool:
+    import subprocess
+    out = subprocess.run(["gh", "pr", "list", "--repo", gh_repo, "--head", head, "--state", "open", "--json", "number",
+                          "-q", "length"], capture_output=True, text=True).stdout.strip()
+    return out not in ("", "0")
+
+
+def result_exists(mode, text, gh_repo, started) -> bool:
+    """Whether the mode's RESULT is real — checked in the world, never read off the agent's last words (except the
+    harvest, whose result may rightly be nothing)."""
+    if mode == "review":
+        return _review_landed(gh_repo, os.environ.get("PR_NUMBER", ""), started)
+    if mode == "coordinate":
+        return _coordinate_done()
+    if mode == "pr":
+        return _pr_opened(gh_repo, os.environ.get("HEAD_REF", ""))
+    return "done" in (text or "").lower()
+
+
+def agent_mode(goal: str) -> str:
+    """Heaven's agent-mode command: the goal, run for up to ITERATIONS rounds (baseheavenagent._detect_agent_command)."""
+    return f"agent goal={goal}, iterations={ITERATIONS}"
+
+
 def main():
     mode = os.environ.get("MODE", "").strip().lower()
     repo = os.environ.get("REPO_DIR", "/repo")
@@ -187,22 +221,17 @@ def main():
     from datetime import datetime, timezone
     started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     agent = build_agent()
-    log.info("agent built; running review loop (max_tool_calls=%d)", MAX_TOOL_CALLS)
-    result = asyncio.run(agent.run(prompt=prompt))
+    log.info("agent built; agent mode, up to %d rounds of %d steps", ITERATIONS, ROUND_STEPS)
+    result = asyncio.run(agent.run(prompt=agent_mode(prompt)))
     text = extract_text(result)
     print("=== CICD Reviewer output ===")
     print(text)
-    if mode == "review":
-        # THE DELIVERABLE IS A POSTED VERDICT. A run whose review never reached the pull request (a shell error while
-        # posting, a model that gave up) is a failure whatever the agent said, so the workflow tries again.
-        if not _review_landed(gh_repo, os.environ.get("PR_NUMBER", ""), started):
-            log.error("no review with a verdict line reached the pull request's tip — run incomplete")
-            sys.exit("FATAL: no verdict was posted on the pull request's tip.")
-    elif "done" not in (text or "").lower():
-        # The agent did not signal completion — surface as failure so CI is not silently green.
-        log.error("agent did not emit DONE — run incomplete")
-        sys.exit("FATAL: agent did not emit DONE — treating run as incomplete.")
-    log.info("review run complete")
+    if not result_exists(mode, text, gh_repo, started):
+        # THE RESULT IS CHECKED IN THE WORLD — a verdict on the PR, the decision file, the opened PR — never read off
+        # the agent's last words. Missing ⇒ the run failed, and the workflow tries once more.
+        log.error("the run ended without its result — incomplete")
+        sys.exit(f"FATAL: the {mode} run ended without its result.")
+    log.info("run complete")
 
 
 if __name__ == "__main__":
