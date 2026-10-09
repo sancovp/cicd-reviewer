@@ -125,9 +125,11 @@ def apply_decision(group: List[PR], decision: Optional[dict]):
 
 def open_prs(repo: str, base: str) -> List[PR]:
     rows = gh_json(["pr", "list", "--repo", repo, "--state", "open", "--base", base, "--limit", "100", "--json",
-                    "number,title,headRefOid,headRefName,createdAt,mergeable,files"]) or []
+                    "number,title,headRefOid,headRefName,createdAt,mergeable,files,isDraft"]) or []
     prs = []
     for r in rows:
+        if r.get("isDraft"):                 # a draft is parked or in progress: never reviewed, queued or merged
+            continue
         p = PR(r["number"], r["title"], r["headRefOid"], r["headRefName"], r["createdAt"], r["mergeable"],
                {f["path"] for f in (r.get("files") or [])})
         reviews = gh_lines(["api", f"repos/{repo}/pulls/{p.number}/reviews", "--paginate", "--jq",

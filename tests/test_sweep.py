@@ -57,6 +57,17 @@ def t_blocking_is_stuck():
     assert p.action == "stuck"
 
 
+def t_a_draft_is_parked_never_reviewed_or_merged():
+    p = decide(facts(open_pr={"number": 7, "mergeable": "MERGEABLE", "head_sha": "abc", "draft": True},
+                     verdict=sweep.VERDICT_CLEAN))
+    assert (p.action, p.pr) == ("parked", 7)
+
+
+def t_tracking_body_lists_parked_separately():
+    body = sweep.tracking_body([sweep.Plan("o/r", "a", "parked", "draft", 4), sweep.Plan("o/r", "b", "stuck", "x", 5)])
+    assert body.index("STUCK") < body.index("`b`") < body.index("PARKED") < body.index("`a`")
+
+
 def t_no_verdict_dispatches_a_review():
     assert decide(facts(open_pr={"number": 7, "mergeable": "MERGEABLE", "head_sha": "abc"})).action == "review"
 
@@ -86,6 +97,7 @@ def t_tracking_body_lists_only_stuck():
     body = sweep.tracking_body(plans)
     assert "`a`" in body and "#3" in body and "`b`" not in body
     assert "Nothing stuck" in sweep.tracking_body([sweep.Plan("o/r", "b", "delete", "x")])
+    assert "Nothing parked" in sweep.tracking_body([])
 
 
 def t_act_never_touches_anything_in_a_dry_run():

@@ -180,6 +180,13 @@ def t_the_standing_branch_is_never_touched():
     assert comments == [] and merges == [] and 9 not in sum(rep.values(), [])
 
 
+def t_a_draft_is_never_queued():
+    p = ghpr(8, {"a"})
+    p["isDraft"] = True
+    rep, merges, disp, comments = _run([p])
+    assert merges == [] and comments == [] and 8 not in sum(rep.values(), [])
+
+
 def t_dry_run_changes_nothing():
     gh, calls = fake_github([ghpr(1, {"a"}), ghpr(2, {"a"})])
     mq.gh = gh

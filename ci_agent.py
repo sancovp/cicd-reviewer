@@ -59,12 +59,9 @@ def _review_prompt(repo, gh_repo, pr, base, head):
 
 
 def _pr_prompt(repo, gh_repo, head):
-    # NOTE (2026-09-06, Isaac's ruling): "it cannot run an LLM to check something that git api
-    # can do." This prompt used to instruct the agent to "check no PR already exists for <head>"
-    # — a question `gh api repos/<r>/pulls?state=open&head=<owner>:<branch>` answers in one call.
-    # That check is now the caller's gate (cicd-pr-on-push.yml), which only dispatches when the
-    # answer is genuinely no. The agent is handed work that is already known to be needed, and
-    # spends its tokens on the one thing it is actually for: summarizing the diff.
+    # MANUAL ONLY (DESIGN.md §3): nothing triggers MODE=pr. Sessions open their own pull requests and the sweep opens
+    # one for a branch left without one; a caller dispatching this checks first that no PR exists (git's API, never
+    # the model), so the agent spends its tokens only on summarizing the diff.
     return (
         f"MODE=pr. Branch `{head}` on {gh_repo} has no open PR — this has ALREADY been verified "
         f"against the GitHub API by the caller, so do NOT spend a tool call re-checking it. The "

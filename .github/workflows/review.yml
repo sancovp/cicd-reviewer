@@ -120,7 +120,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$MODE" = "review" ]; then
-            STATE=$(gh pr view "$PR" --repo "$REPO" --json state -q .state)
+            STATE=$(gh pr view "$PR" --repo "$REPO" --json state,isDraft -q 'if .isDraft then "DRAFT" else .state end')
             [ "$STATE" = "OPEN" ] && echo "skip=false" >> "$GITHUB_OUTPUT" || { echo "skip=true" >> "$GITHUB_OUTPUT"; echo "#$PR is $STATE — nothing to review."; }
           else
             if gh api "repos/$REPO/branches/$HEAD" >/dev/null 2>&1; then echo "skip=false" >> "$GITHUB_OUTPUT"; else echo "skip=true" >> "$GITHUB_OUTPUT"; echo "branch $HEAD is gone — nothing to open."; fi

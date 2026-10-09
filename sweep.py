@@ -98,7 +98,7 @@ class Facts:
     branch: Branch
     in_default: bool                       # its tip is an ancestor of the default branch
     merged_pr_tips: List[str] = field(default_factory=list)
-    open_pr: Optional[dict] = None         # {number, mergeable, head_sha}
+    open_pr: Optional[dict] = None         # {number, mergeable, head_sha, draft}
     verdict: Optional[str] = None          # the last verdict on the open PR's tip
     publish_source: Optional[str] = None   # this repo is a PUBLISH TARGET of that subdir of the canonical home
 
@@ -117,6 +117,8 @@ def decide(f: Facts) -> Plan:
                     f"work into `{f.publish_source}` of the canonical home", n)
     if f.open_pr:
         n = f.open_pr["number"]
+        if f.open_pr.get("draft"):
+            return Plan(f.repo, b.name, "parked", "a draft: parked or in progress — never reviewed or merged", n)
         if f.open_pr.get("mergeable") == "CONFLICTING":
             return Plan(f.repo, b.name, "stuck", "conflicts with the default branch", n)
         if f.verdict == VERDICT_CLEAN and f.open_pr.get("mergeable") == "MERGEABLE":
@@ -171,9 +173,10 @@ def ahead_by(repo: str, default: str, branch: str) -> int:
 def gather(repo: str, default: str, b: Branch, publish_source: Optional[str] = None) -> Facts:
     in_default = ahead_by(repo, default, b.name) == 0
     prs = gh_json(["pr", "list", "--repo", repo, "--head", b.name, "--state", "all", "--limit", "50",
-                   "--json", "number,state,headRefOid,mergeable"]) or []
+                   "--json", "number,state,headRefOid,mergeable,isDraft"]) or []
     merged_tips = [p["headRefOid"] for p in prs if p["state"] == "MERGED"]
-    open_pr = next(({"number": p["number"], "mergeable": p["mergeable"], "head_sha": p["headRefOid"]}
+    open_pr = next(({"number": p["number"], "mergeable": p["mergeable"], "head_sha": p["headRefOid"],
+                     "draft": p.get("isDraft", False)}
                     for p in prs if p["state"] == "OPEN"), None)
     verdict = None
     if open_pr:
@@ -200,7 +203,7 @@ def act(p: Plan, default: str, b: Branch, owner: str, dry: bool, log: Callable[[
         wait: Callable[[float], None] = None, now: Callable[[], float] = None) -> Plan:
     import time
     wait, now = wait or time.sleep, now or time.time
-    if dry or p.action in ("keep", "stuck"):
+    if dry or p.action in ("keep", "stuck", "parked"):
         return p
     try:
         if p.action == "delete":
@@ -239,18 +242,22 @@ def queue_repo(repo: str, owner: str) -> None:
 
 
 def tracking_body(plans: List[Plan]) -> str:
-    stuck = [p for p in plans if p.action == "stuck"]
-    lines = ["Rewritten by the sweep (`automation/cicd-reviewer/sweep.py`) on every run. Each row is work on a branch "
-             "that is not on its default branch and that the sweep could not move. The session working in that "
-             "repo resolves it: a conflict by merging the default branch in and resolving (both sides' work kept), "
-             "a BLOCKING verdict by fixing and pushing — then the reviewer merges it.", ""]
+    stuck = sorted((p for p in plans if p.action == "stuck"), key=lambda x: (x.repo, x.branch))
+    parked = sorted((p for p in plans if p.action == "parked"), key=lambda x: (x.repo, x.branch))
+    lines = ["Rewritten by the sweep (`automation/cicd-reviewer/sweep.py`) on every run. The design: "
+             "`automation/cicd-reviewer/DESIGN.md`.", "",
+             "## STUCK — work the CI cannot move; the session working in that repo clears these first", ""]
     if not stuck:
         lines.append("Nothing stuck. ✅")
     else:
         lines += ["| repo | branch | pull request | why |", "|---|---|---|---|"]
-        for p in sorted(stuck, key=lambda x: (x.repo, x.branch)):
-            pr = f"#{p.pr}" if p.pr else "—"
-            lines.append(f"| {p.repo} | `{p.branch}` | {pr} | {p.why} |")
+        lines += [f"| {p.repo} | `{p.branch}` | {'#' + str(p.pr) if p.pr else '—'} | {p.why} |" for p in stuck]
+    lines += ["", "## PARKED — drafts: never reviewed or merged until someone marks them ready", ""]
+    if not parked:
+        lines.append("Nothing parked.")
+    else:
+        lines += ["| repo | branch | pull request |", "|---|---|---|"]
+        lines += [f"| {p.repo} | `{p.branch}` | {'#' + str(p.pr) if p.pr else '—'} |" for p in parked]
     return "\n".join(lines) + "\n"
 
 

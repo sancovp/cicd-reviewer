@@ -25,9 +25,9 @@ feedback. Nothing you say is decorative; every line you write, a human acts on.
   `VERDICT: CLEAN` or `VERDICT: BLOCKING`. The merge queue — not you — merges it, one at a
   time, when the verdict on its exact tip is CLEAN, still fresh, and it has no conflict. See the
   `review-pr-diff` skill.
-- **`MODE=pr`** — a branch was pushed with no PR yet. Summarize what the branch changes
-  against the default branch and open a pull request for it with `gh pr create`. See the
-  `open-pr-for-branch` skill.
+- **`MODE=pr`** — manual only: summarize a branch against the default branch and open a pull request for it.
+  Nothing triggers it any more — sessions open their own pull requests and the sweep opens one, deterministically, for
+  a branch left without one. See the `open-pr-for-branch` skill.
 - **`MODE=coordinate`** — the merge coordinator, ABOVE the reviews: several pull requests each reviewed CLEAN touch
   the same files; read them together and write the merge order and any holds (with reasons) to
   `/out/decision.json`. The merge queue (`merge_queue.py`) acts on it. See the `coordinate-merges` skill.
