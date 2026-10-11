@@ -34,9 +34,18 @@ and reading several changes together (the coordinator).
                  ├─ conflicts with main ──▶ one comment; the session merges main in, pushes ──▶ reviewed again
                  ├─ shares files with another ready PR ──▶ the coordinator orders them / holds one
                  └─ ready, fresh, alone or first in order ──▶ MERGED (squash at the reviewed tip, branch deleted)
- the session waits while it runs and confirms MERGED; if it ends first, the work is listed in UNMERGED WORK
- and the next session in that repository clears it before anything else
+ the session waits while it runs — through the PR watch (`pr_watch.py`), never a loop of its own — and confirms MERGED;
+ if it ends first, the work is listed in UNMERGED WORK and the next session in that repository clears it before anything else
 ```
+
+**The PR watch** (`python3 automation/cicd-reviewer/pr_watch.py <n> --expect-head <your last pushed sha>`, run in the
+background) is how a session waits. The harness wakes a session only when a background task exits, so the watch exits
+— once, with one line naming what to do — when the pull request is MERGED (at the expected tip, or exit 4: carry the
+rest in a new PR) or CLOSED, CONFLICTING, BLOCKING on its tip, gets a new comment, or has its tip moved; and it
+checks before it waits, so a pull request already in one of those states exits at once. A CLEAN verdict and a
+mergeable state of UNKNOWN are not actions (the queue moves a CLEAN pull request; UNKNOWN is GitHub computing). It
+never runs past `--max-hours` (default 4): it exits TIMEOUT saying where the pull request stands. Exit codes: 0 done ·
+2 act · 3 timeout · 4 merged at another tip · 5 gh down.
 
 | state | what it means | who moves it |
 |---|---|---|
@@ -149,6 +158,7 @@ edits the issue). This directory is authored in the canonical home at `automatio
 | a merge into a publish target would be overwritten by the next publish | the sweep lists those branches for porting |
 | REST compare answered 500 on large diffs | GraphQL's comparison |
 | the freshness check read `gh api --jq '.[].sha'` through the JSON-per-line reader; `--jq` prints a string raw, so the first sha after any commit on main crashed the run — nine queue runs failed in a row and nothing merged for hours while every verdict was CLEAN | `gh_strings` reads `--jq` string output raw; the tests' fake GitHub answers those calls raw, as gh does, so the crash fails a test |
+| sessions waited on hand-written loops: one baselined CONFLICTING and looped four hours (#1561), one started after its merge and ran all night (#1599), one had to be patched to keep going past CLEAN (#1566) — each a deploy or a fix hours late | the PR watch (`pr_watch.py`): checks before it waits, exits on every state the session must act on, never past its cap; a test per failure |
 | every push to a PR re-reviewed half-finished work | reviews only for ready PRs; drafts fire nothing |
 | an AI opening PRs on branch creation raced the sessions' own | removed; sessions open their own, the sweep catches the rest |
 
@@ -164,5 +174,6 @@ repo (§8) · the harvest moved here, drafting its rule PRs (§9) · a cost mete
 Edit here, in the canonical home, never in the public repo. A change opens a ready PR like any other — the reviewer
 reviews its own code and the queue merges it — except a change to the merge path itself, which cannot review itself
 before it is published: merge it after a CLEAN verdict by hand, then prove the published version live. Run before every
-push: `python3 tests/test_merge_queue.py` · `python3 tests/test_sweep.py` · `python3 tests/test_ci_agent.py`, all green;
+push: `python3 tests/test_merge_queue.py` · `python3 tests/test_sweep.py` · `python3 tests/test_ci_agent.py` ·
+`python3 tests/test_pr_watch.py`, all green;
 a guard added gets a test that fails with the guard removed. After a publish, prove the changed path live on a real PR.

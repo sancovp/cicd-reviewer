@@ -32,6 +32,7 @@ real pull request) → **LIVE** (what every pull request goes through). `●` = 
 | drafts fire nothing — reviews only for ready pull requests; queue and sweep skip drafts | [§2](../../DESIGN.md) · [§3](../../DESIGN.md) | ● | ● | | |
 | no AI opener on branch creation — sessions open their own pull requests | [§3](../../DESIGN.md) | ● | ● | | |
 | sessions never merge — the session rule hands off and waits | [§2](../../DESIGN.md) | ● | ● | | |
+| the PR watch — a session waits through `pr_watch.py`, which exits on every state it must act on | [§2](../../DESIGN.md) | ● | ● | ● | |
 | the review trigger in every active repo | [§8](../../DESIGN.md) | ● | | | |
 | the rule harvest moved here, its rule pull requests drafts | [§9](../../DESIGN.md) | ● | | | |
 | a cost meter — reviews and model spend per day | [§13](../../DESIGN.md) | ● | | | |
