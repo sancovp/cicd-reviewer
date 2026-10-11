@@ -8,7 +8,8 @@ deterministically, with the model called in exactly one place — when ready pul
      GitHub calls MERGEABLE, and that the coordinator has not held at this tip.
   2. FRESH = no commit has landed on the default branch, since that verdict was posted, touching any file the pull
      request touches. A verdict that is not fresh was given about a main that no longer exists: the pull request is
-     reviewed again (dispatched, spaced) and waits.
+     reviewed again (dispatched, spaced) and waits. The shas and filenames this reads come from `--jq` as RAW strings
+     (gh_strings), never parsed as JSON — the queue once crashed on the first sha whenever anything had landed.
   3. Ready-and-fresh pull requests are grouped by the files they share. A group of one merges. A group of several
      goes to the COORDINATOR (the reviewer in MODE=coordinate), which reads their diffs and answers the order to
      merge them in and which to HOLD because they contradict another or would break together. The first in its order
@@ -31,7 +32,7 @@ import tempfile
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Set
 
-from sweep import STANDING, VERDICT_BLOCKING, VERDICT_CLEAN, _space_out, gh, gh_json, gh_lines, verdict_of
+from sweep import STANDING, VERDICT_BLOCKING, VERDICT_CLEAN, _space_out, gh, gh_json, gh_lines, gh_strings, verdict_of
 
 HELD = "held by the merge coordinator at"
 CONFLICT = "conflicts with"
@@ -141,12 +142,12 @@ def open_prs(repo: str, base: str) -> List[PR]:
 
 
 def changed_since(repo: str, base: str, since: str) -> Optional[Set[str]]:
-    shas = gh_lines(["api", f"repos/{repo}/commits?sha={base}&since={since}&per_page={COMMIT_CAP}", "--jq", ".[].sha"])
+    shas = gh_strings(["api", f"repos/{repo}/commits?sha={base}&since={since}&per_page={COMMIT_CAP}", "--jq", ".[].sha"])
     if len(shas) >= COMMIT_CAP:
         return None
     files: Set[str] = set()
     for sha in shas:
-        files |= set(gh_lines(["api", f"repos/{repo}/commits/{sha}", "--jq", ".files[].filename"]))
+        files |= set(gh_strings(["api", f"repos/{repo}/commits/{sha}", "--jq", ".files[].filename"]))
     return files
 
 

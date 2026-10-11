@@ -97,11 +97,12 @@ def fake_github(prs, changed_files_by_sha=None, commits_since=None):
                 return "\n".join(json.dumps(r) for r in p["reviews"])
             if a.startswith(f"api repos/o/r/issues/{p['number']}/comments"):
                 return p.get("comments", "")
+        # `--jq '.[].sha'` / `.files[].filename` print strings RAW, one per line — not JSON. The fake answers as gh does.
         if a.startswith("api repos/o/r/commits?"):
-            return "\n".join(json.dumps(s) for s in (commits_since or []))
+            return "\n".join(commits_since or [])
         if a.startswith("api repos/o/r/commits/"):
             sha = args[1].rsplit("/", 1)[1]
-            return "\n".join(json.dumps(f) for f in (changed_files_by_sha or {}).get(sha, []))
+            return "\n".join((changed_files_by_sha or {}).get(sha, []))
         return ""
     return gh, calls
 
@@ -121,6 +122,7 @@ def _run(prs, coordinate=None, **kw):
     sweep.gh = gh
     mq.gh_json = lambda args: json.loads(gh(args) or "null")
     mq.gh_lines = lambda args: [json.loads(l) for l in gh(args).splitlines() if l.strip()]
+    mq.gh_strings = lambda args: [l.strip() for l in gh(args).splitlines() if l.strip()]
     sweep._last_dispatch[0] = 0.0
     rep = mq.run("o/r", coordinate=coordinate or (lambda r, g, log: None), log=lambda m: None,
                  wait=lambda s: None, now=lambda: 0.0)
@@ -161,6 +163,16 @@ def t_a_verdict_older_than_a_change_to_its_files_is_reviewed_again_not_merged():
     assert merges == [] and rep["rereview"] == [1] and disp == ["1"]
 
 
+def t_the_freshness_check_reads_shas_and_filenames_as_gh_prints_them_raw():
+    """`gh api --jq '.[].sha'` prints `af8c276a1e60…`, not `"af8c276a1e60…"`; read as JSON it crashed every queue run
+    the moment one commit had landed after a verdict (nine runs in a row, nothing merged for hours)."""
+    sha = "af8c276a1e60006a8167124f475e096e1299e631"
+    rep, merges, disp, _ = _run([ghpr(1, {"a"})], commits_since=[sha], changed_files_by_sha={sha: [".claude/rules/states.md"]})
+    assert rep["merged"] == [1], rep
+    rep, merges, disp, _ = _run([ghpr(1, {"a"})], commits_since=[sha], changed_files_by_sha={sha: ["a"]})
+    assert merges == [] and rep["rereview"] == [1], rep
+
+
 def t_a_change_to_other_files_leaves_the_verdict_fresh():
     rep, merges, disp, _ = _run([ghpr(1, {"a"})], commits_since=["c1"], changed_files_by_sha={"c1": ["z"]})
     assert rep["merged"] == [1]
@@ -193,6 +205,7 @@ def t_dry_run_changes_nothing():
     sweep.gh = gh
     mq.gh_json = lambda args: json.loads(gh(args) or "null")
     mq.gh_lines = lambda args: [json.loads(l) for l in gh(args).splitlines() if l.strip()]
+    mq.gh_strings = lambda args: [l.strip() for l in gh(args).splitlines() if l.strip()]
     mq.run("o/r", dry=True, coordinate=lambda r, g, log: None, log=lambda m: None, wait=lambda s: None, now=lambda: 0.0)
     assert not [c for c in calls if c[0][:2] in (["pr", "merge"], ["pr", "comment"]) or (c[1] and "review-pr" in c[1])]
 

@@ -148,6 +148,7 @@ edits the issue). This directory is authored in the canonical home at `automatio
 | independent CLEAN verdicts wrong together (#1465 / #1470) | freshness; one merge at a time; the coordinator |
 | a merge into a publish target would be overwritten by the next publish | the sweep lists those branches for porting |
 | REST compare answered 500 on large diffs | GraphQL's comparison |
+| the freshness check read `gh api --jq '.[].sha'` through the JSON-per-line reader; `--jq` prints a string raw, so the first sha after any commit on main crashed the run — nine queue runs failed in a row and nothing merged for hours while every verdict was CLEAN | `gh_strings` reads `--jq` string output raw; the tests' fake GitHub answers those calls raw, as gh does, so the crash fails a test |
 | every push to a PR re-reviewed half-finished work | reviews only for ready PRs; drafts fire nothing |
 | an AI opening PRs on branch creation raced the sessions' own | removed; sessions open their own, the sweep catches the rest |
 

@@ -53,6 +53,12 @@ def gh_lines(args: List[str]) -> List[dict]:
     return [json.loads(line) for line in gh(args).splitlines() if line.strip()]
 
 
+def gh_strings(args: List[str]) -> List[str]:
+    """A `gh api … --jq '.[].field'` whose values are strings: `--jq` prints a string RAW (no quotes), one per line,
+    so these lines are not JSON and are never parsed as such — reading a sha or a filename through gh_lines crashed."""
+    return [line.strip() for line in gh(args).splitlines() if line.strip()]
+
+
 def verdict_of(body: str) -> Optional[str]:
     """The verdict line a review ends with, or None when it has none."""
     for line in reversed((body or "").strip().splitlines()):
