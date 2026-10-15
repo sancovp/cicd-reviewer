@@ -76,6 +76,15 @@ def t_new_comment_and_a_push_exit():
     assert w.run() == 2 and "PUSHED" in w.lines[-1]
 
 
+def t_a_deploy_previews_comment_keeps_waiting():
+    # every pull request got the Cloudflare preview's status comment, and every watch exited on it for nothing
+    bot = {"author": {"login": "cloudflare-workers-and-pages"}, "body": "Deploying Preview"}
+    w = World(pr(), dict(pr(), comments=[bot]), pr(state="MERGED"))
+    assert w.run() == 0 and w.i == 3 and "MERGED" in w.lines[-1]
+    person = {"author": {"login": "sancovp"}, "body": "held: wait for #12"}
+    assert World(pr(), dict(pr(), comments=[bot, person])).run() == 2
+
+
 def t_merged_at_another_tip_than_expected():
     assert World(pr(state="MERGED", head="aaaa1111")).run(expect="aaaa1111ffff") == 0
     w = World(pr(state="MERGED", head="aaaa1111"))

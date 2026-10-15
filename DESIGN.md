@@ -41,7 +41,8 @@ and reading several changes together (the coordinator).
 **The PR watch** (`python3 automation/cicd-reviewer/pr_watch.py <n> --expect-head <your last pushed sha>`, run in the
 background) is how a session waits. The harness wakes a session only when a background task exits, so the watch exits
 — once, with one line naming what to do — when the pull request is MERGED (at the expected tip, or exit 4: carry the
-rest in a new PR) or CLOSED, CONFLICTING, BLOCKING on its tip, gets a new comment, or has its tip moved; and it
+rest in a new PR) or CLOSED, CONFLICTING, BLOCKING on its tip, gets a new comment (a deploy preview's status comment, posted on every
+pull request, is not one), or has its tip moved; and it
 checks before it waits, so a pull request already in one of those states exits at once. A CLEAN verdict and a
 mergeable state of UNKNOWN are not actions (the queue moves a CLEAN pull request; UNKNOWN is GitHub computing). It
 never runs past `--max-hours` (default 4): it exits TIMEOUT saying where the pull request stands. Exit codes: 0 done ·

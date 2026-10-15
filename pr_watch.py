@@ -9,7 +9,8 @@ always exits:
   CLOSED     closed without merging
   CONFLICT   GitHub cannot merge it: merge the default branch in, push
   BLOCKING   the reviewer's verdict on the exact tip: fix, push
-  COMMENT    a new comment (the queue's conflict or hold notice, a person): read it
+  COMMENT    a new comment (the queue's conflict or hold notice, a person): read it — a deploy preview's status
+             comment is not one: it is posted on every pull request and never asks the session for anything
   PUSHED     the tip moved under the watch: someone else pushed
   TIMEOUT    still waiting after --max-hours: it says where it stands; the session decides whether to watch again
   GH-DOWN    gh failed on every try for --max-failures polls in a row
@@ -31,6 +32,9 @@ from typing import Callable, List, Optional
 
 from sweep import VERDICT_BLOCKING, gh_json, verdict_of
 
+# deploy previews post a status comment on every pull request; none of them asks the session for anything
+PREVIEW_BOTS = {"cloudflare-workers-and-pages"}
+
 EXIT = {"MERGED": 0, "CLOSED": 0, "CONFLICT": 2, "BLOCKING": 2, "COMMENT": 2, "PUSHED": 2,
         "TIMEOUT": 3, "HEAD-MISMATCH": 4, "GH-DOWN": 5}
 
@@ -51,7 +55,9 @@ def snap_of(pr: dict) -> Snap:
     for rv in sorted(pr.get("reviews") or [], key=lambda r: r.get("submittedAt") or ""):
         if ((rv.get("commit") or {}).get("oid") or "") == head:
             verdict = verdict_of(rv.get("body") or "") or verdict
-    return Snap(pr.get("state") or "", pr.get("mergeable") or "UNKNOWN", head, verdict, len(pr.get("comments") or []))
+    comments = [c for c in pr.get("comments") or []
+                if ((c.get("author") or {}).get("login") or "") not in PREVIEW_BOTS]
+    return Snap(pr.get("state") or "", pr.get("mergeable") or "UNKNOWN", head, verdict, len(comments))
 
 
 def needs_action(s: Snap) -> Optional[str]:
