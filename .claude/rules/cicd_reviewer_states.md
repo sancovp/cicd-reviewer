@@ -15,7 +15,7 @@ A question only *USER* can answer moves: **RAISED** (named) → **PUT** (put to 
 | who marks the rule harvest's draft pull requests ready — the reviewer must not approve a rule it wrote | [§9](../../DESIGN.md) | ● | | | |
 | how fast other repos' pull requests should merge — daily through the sweep, or the review trigger installed in each active repo | [§8](../../DESIGN.md) | ● | | | |
 | OM Daily Driver (#1476, parked as a draft) — keep, change or drop | [§8](../../DESIGN.md) | ● | ● | | |
-| merges never wait on the model — ruled: when the reviewer's model is down, the queue merges on the automatic checks and the review runs after the merge; the reviewer's MiniMax plan is the reviewer's alone; this change merged by hand once | [§2](../../DESIGN.md) · [§10](../../DESIGN.md) | ● | ● | ● | |
+| merges never wait on the model — ruled: when the reviewer's model is down, the queue merges on the automatic checks and the review runs after the merge; the reviewer's MiniMax plan is the reviewer's alone; until it answers, the session holding the CI lands every merge | [§2](../../DESIGN.md) · [§10](../../DESIGN.md) · [§14](../../DESIGN.md) | ● | ● | ● | ● |
 | a MiniMax plan of its own for the test business's JobWorld box and the HealthWorld box (both off until then), or which model each runs on | [§10](../../DESIGN.md) | ● | ● | | |
 
 ## THE FLOW
@@ -38,4 +38,6 @@ real pull request) → **LIVE** (what every pull request goes through). `●` = 
 | the review trigger in every active repo | [§8](../../DESIGN.md) | ● | | | |
 | the rule harvest moved here, its rule pull requests drafts | [§9](../../DESIGN.md) | ● | | | |
 | a cost meter — reviews and model spend per day | [§13](../../DESIGN.md) | ● | | | |
-| merges never wait on the model — the model's check, the UNREVIEWED mark, the queue merging on its own workflows' checks, the late review and its fix issue | [§2](../../DESIGN.md) · [§5](../../DESIGN.md) · [§6](../../DESIGN.md) | ● | ● | | |
+| merges never wait on the model — the model's check, the UNREVIEWED mark, the queue merging on its own workflows' checks and labelling `review-owed` | [§2](../../DESIGN.md) · [§5](../../DESIGN.md) | ● | ● | ● | |
+| the late review — a merged `review-owed` pull request reviewed once the model answers; BLOCKING opens a fix issue | [§4](../../DESIGN.md) · [§6](../../DESIGN.md) | ● | ● | | |
+| a failed review shown failed on the pull request — today the canonical home's check is the dispatch, green whatever the review does | [§13](../../DESIGN.md) | ● | | | |

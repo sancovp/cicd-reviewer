@@ -195,16 +195,21 @@ the HealthWorld box ran on it; both are off until each has a plan of its own (th
 
 BUILT and proven live: the verdict line · the merge queue (#1486, #1487, #1488, #1490, #1491 merged with nobody
 touching them) · the coordinator (asked about #1476 and #1477, it held #1477 with the exact reason) · the sweep (389 merged
-branches deleted, 23 PRs opened) · the tracking issue · draft parking. BUILT, tests green, to prove live while the model
-is down: the model's check and the UNREVIEWED mark · the queue merging UNREVIEWED on its checks and labelling it · the late
-review and its "Fix owed" issue. ASPIRATIONAL: the review trigger in every active
-repo (§8) · the harvest moved here, drafting its rule PRs (§9) · a cost meter (reviews and model spend per day).
+branches deleted, 23 PRs opened) · the tracking issue · draft parking · the outage path up to the merge (with the model
+down, every reviewed tip was marked UNREVIEWED and the queue merged video-aios#27, #1985, #1986, #1987 and #1996 on their
+own workflows' checks, each labelled `review-owed`). BUILT, tests green, to prove once the model answers: the late review
+and its "Fix owed" issue. ASPIRATIONAL: the review trigger in every active repo (§8) · the harvest moved here, drafting
+its rule PRs (§9) · a cost meter (reviews and model spend per day) · a failed review shown failed on the pull request (the
+canonical home's check is the trigger's dispatch, green whatever the review then does).
 
 ## 14. How to change it
 
 Edit here, in the canonical home, never in the public repo. A change opens a ready PR like any other — the reviewer
 reviews its own code and the queue merges it — except a change to the merge path itself, which cannot review itself
-before it is published: merge it after a CLEAN verdict by hand, then prove the published version live. Run before every
-push: `python3 tests/test_merge_queue.py` · `python3 tests/test_sweep.py` · `python3 tests/test_ci_agent.py` ·
+before it is published: merge it after a CLEAN verdict by hand, then prove the published version live. **While the model
+is down, the owner's word covers every merge until it answers:** the session that holds the CI merges a merge-path change
+by hand without a verdict, lands every pull request the outage holds up (resolving their conflicts too) and never asks
+per pull request. Prove such a change against real pull requests' data and under the runner's own shell (`bash -e`)
+before it merges, so that one merge carries the whole fix. Run before every push: `python3 tests/test_merge_queue.py` · `python3 tests/test_sweep.py` · `python3 tests/test_ci_agent.py` ·
 `python3 tests/test_pr_watch.py` · `python3 tests/test_outage.py`, all green;
 a guard added gets a test that fails with the guard removed. After a publish, prove the changed path live on a real PR.
