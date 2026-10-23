@@ -161,7 +161,7 @@ jobs:
         env:
           MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
         run: |
-          set -uo pipefail
+          set +e   # the step's shell is `bash -e`: the check's own exit code (10 = down) must not end the step
           OUT=$(python3 ci/outage.py probe); RC=$?
           echo "$OUT"
           echo "state=${OUT%% *}" >> "$GITHUB_OUTPUT"
