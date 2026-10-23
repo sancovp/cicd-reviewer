@@ -11,7 +11,8 @@ UnifiedChat + History, tools=[BashTool], provider=ANTHROPIC, model=MiniMax-M3). 
 is auto-selected by unified_chat.py when model starts with "minimax" (needs MINIMAX_API_KEY).
 
 Env:
-  MODE               review | pr | harvest | coordinate   (which task to run)
+  MODE               review | review-merged | pr | harvest | coordinate   (which task to run; review-merged = the late
+                     review of a pull request merged while the model was down)
   COORD_INPUT        (coordinate mode) JSON list of the overlapping CLEAN pull requests
   REPO_DIR           checked-out repo path (default /repo)
   GITHUB_REPOSITORY  owner/name
@@ -56,6 +57,17 @@ def _review_prompt(repo, gh_repo, pr, base, head):
         f"exactly `VERDICT: CLEAN` (no blocking finding) or `VERDICT: BLOCKING` (at least one real "
         f"correctness/security/contract finding) — the workflow merges the pull request on CLEAN. "
         f"End with DONE."
+    )
+
+
+def _late_review_prompt(gh_repo, pr):
+    return (
+        f"MODE=review-merged. Pull request #{pr} on {gh_repo} was MERGED while the reviewer's model was down, so nobody "
+        f"has reviewed it. Review it now: read its diff with `gh pr diff {pr} --repo {gh_repo}` (the default branch is "
+        f"checked out at /repo for context), and find real correctness/security/contract issues per the `review-pr-diff` "
+        f"skill and your review-discipline rule (cite path:line, trace each to an exact symptom, drop vague ones). Post "
+        f"your review as a comment with `gh pr comment {pr} --repo {gh_repo} --body-file <file>`. Its LAST LINE must be "
+        f"exactly `VERDICT: CLEAN` or `VERDICT: BLOCKING` — a BLOCKING verdict opens a fix issue. End with DONE."
     )
 
 
@@ -162,6 +174,25 @@ def _review_landed(gh_repo, pr, since_iso):
     return verdict_posted(reviews, head, since_iso)
 
 
+def late_verdict_posted(comments, since_iso):
+    """True when a comment posted since the run began ends in a verdict line — the late review's deliverable."""
+    for c in comments or []:
+        if (c.get("created_at") or "") < since_iso:
+            continue
+        lines = [l.strip() for l in (c.get("body") or "").strip().splitlines() if l.strip()]
+        if lines and lines[-1] in VERDICT_LINES:
+            return True
+    return False
+
+
+def _late_review_landed(gh_repo, pr, since_iso):
+    import json
+    import subprocess
+    out = subprocess.run(["gh", "api", f"repos/{gh_repo}/issues/{pr}/comments", "--paginate", "--jq",
+                          ".[] | {created_at, body}"], capture_output=True, text=True).stdout
+    return late_verdict_posted([json.loads(l) for l in out.splitlines() if l.strip()], since_iso)
+
+
 def _coordinate_done() -> bool:
     import json
     try:
@@ -183,6 +214,8 @@ def result_exists(mode, text, gh_repo, started) -> bool:
     harvest, whose result may rightly be nothing)."""
     if mode == "review":
         return _review_landed(gh_repo, os.environ.get("PR_NUMBER", ""), started)
+    if mode == "review-merged":
+        return _late_review_landed(gh_repo, os.environ.get("PR_NUMBER", ""), started)
     if mode == "coordinate":
         return _coordinate_done()
     if mode == "pr":
@@ -207,6 +240,8 @@ def main():
             repo, gh_repo, os.environ.get("PR_NUMBER", ""),
             os.environ.get("BASE_REF", ""), os.environ.get("HEAD_REF", ""),
         )
+    elif mode == "review-merged":
+        prompt = _late_review_prompt(gh_repo, os.environ.get("PR_NUMBER", ""))
     elif mode == "pr":
         prompt = _pr_prompt(repo, gh_repo, os.environ.get("HEAD_REF", ""))
     elif mode == "harvest":
@@ -214,7 +249,7 @@ def main():
     elif mode == "coordinate":
         prompt = _coordinate_prompt(gh_repo, os.environ.get("COORD_INPUT", "[]"))
     else:
-        sys.exit(f"FATAL: MODE must be 'review', 'pr', 'harvest' or 'coordinate', got {mode!r}")
+        sys.exit(f"FATAL: MODE must be 'review', 'review-merged', 'pr', 'harvest' or 'coordinate', got {mode!r}")
 
     log.info("mode=%s repo=%s gh_repo=%s model=%s cwd=%s",
              mode, repo, gh_repo, os.environ.get("CICD_MODEL", "MiniMax-M3"), os.getcwd())

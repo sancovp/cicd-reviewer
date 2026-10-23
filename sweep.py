@@ -7,9 +7,12 @@ sources, not forks, not archived). For every branch that is not the default bran
 
   - its tip is already in the default branch, or a MERGED pull request has exactly that tip ⇒ the work is on the
     default branch: the branch is deleted.
-  - it has an OPEN pull request ⇒ when the reviewer's last verdict on that exact tip is CLEAN and the request has no
-    conflict, its repo is handed to the merge queue (merge_queue.py), which merges; with a conflict, it is listed STUCK; with no verdict on
-    that tip, a review is dispatched (and `review.yml` merges it when the verdict is CLEAN).
+  - it has an OPEN pull request ⇒ when the reviewer's last verdict on that exact tip is CLEAN — or UNREVIEWED, the model
+    having been down — and the request has no conflict, its repo is handed to the merge queue (merge_queue.py), which
+    merges; with a conflict, it is listed STUCK; with no verdict on that tip, a review is dispatched.
+
+Every pull request merged while the reviewer's model was down (labelled `review-owed`) is sent to the reviewer again,
+merged, so the AI reads it once it answers; a defect it finds opens a "Fix owed" issue (outage.py close-late).
   - it has no open pull request ⇒ one is opened (title: the branch, body: its commits) and a review dispatched.
 
 What it cannot move is listed in ONE tracking issue on the canonical home (`UNMERGED WORK`), rewritten every run.
@@ -24,6 +27,7 @@ import argparse
 import json
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
 
@@ -32,6 +36,8 @@ TRACKING_REPO = "sancovp/sanctuary-revolution-alpha"
 TRACKING_TITLE = "UNMERGED WORK"
 VERDICT_CLEAN = "VERDICT: CLEAN"
 VERDICT_BLOCKING = "VERDICT: BLOCKING"
+VERDICT_UNREVIEWED = "VERDICT: UNREVIEWED"   # the model was down at this tip: merged on the automatic checks, reviewed after
+REVIEW_OWED = "review-owed"                  # the label on a pull request merged UNREVIEWED, until its late review lands
 REVIEW_SPACING = 180   # seconds between dispatched reviews: the model refuses (429) reviews fired all at once
 
 
@@ -63,7 +69,7 @@ def verdict_of(body: str) -> Optional[str]:
     """The verdict line a review ends with, or None when it has none."""
     for line in reversed((body or "").strip().splitlines()):
         line = line.strip()
-        if line in (VERDICT_CLEAN, VERDICT_BLOCKING):
+        if line in (VERDICT_CLEAN, VERDICT_BLOCKING, VERDICT_UNREVIEWED):
             return line
         if line:
             return None
@@ -129,6 +135,9 @@ def decide(f: Facts) -> Plan:
             return Plan(f.repo, b.name, "stuck", "conflicts with the default branch", n)
         if f.verdict == VERDICT_CLEAN and f.open_pr.get("mergeable") == "MERGEABLE":
             return Plan(f.repo, b.name, "merge", "the reviewer's verdict on this tip is CLEAN — handed to the merge queue", n)
+        if f.verdict == VERDICT_UNREVIEWED and f.open_pr.get("mergeable") == "MERGEABLE":
+            return Plan(f.repo, b.name, "merge", "the reviewer's model was down at this tip — handed to the merge queue, "
+                        "which merges on the automatic checks; it is reviewed after it merges", n)
         if f.verdict == VERDICT_BLOCKING:
             return Plan(f.repo, b.name, "stuck", "the reviewer's verdict is BLOCKING — fix and push", n)
         return Plan(f.repo, b.name, "review", "no verdict yet on this tip", n)
@@ -247,9 +256,17 @@ def queue_repo(repo: str, owner: str) -> None:
        json.dumps({"event_type": "merge-queue", "client_payload": {"repo": repo}}))
 
 
+def owed_reviews(owner: str) -> List[dict]:
+    """every pull request merged while the reviewer's model was down whose late review has not landed"""
+    rows = gh_json(["search", "prs", "--owner", owner, "--merged", "--label", REVIEW_OWED, "--limit", "100",
+                    "--json", "number,repository"]) or []
+    return [{"repo": r["repository"]["nameWithOwner"], "number": r["number"]} for r in rows]
+
+
 def tracking_body(plans: List[Plan]) -> str:
     stuck = sorted((p for p in plans if p.action == "stuck"), key=lambda x: (x.repo, x.branch))
     parked = sorted((p for p in plans if p.action == "parked"), key=lambda x: (x.repo, x.branch))
+    owed = sorted((p for p in plans if p.action == "owed"), key=lambda x: (x.repo, x.pr or 0))
     lines = ["Rewritten by the sweep (`automation/cicd-reviewer/sweep.py`) on every run. The design: "
              "`automation/cicd-reviewer/DESIGN.md`.", "",
              "## STUCK — work the CI cannot move; the session working in that repo clears these first", ""]
@@ -264,6 +281,10 @@ def tracking_body(plans: List[Plan]) -> str:
     else:
         lines += ["| repo | branch | pull request |", "|---|---|---|"]
         lines += [f"| {p.repo} | `{p.branch}` | {'#' + str(p.pr) if p.pr else '—'} |" for p in parked]
+    if owed:
+        lines += ["", "## REVIEW OWED — merged while the reviewer's model was down; reviewed once it answers", "",
+                  "| repo | pull request | where it stands |", "|---|---|---|"]
+        lines += [f"| {p.repo} | #{p.pr} | {p.why} |" for p in owed]
     return "\n".join(lines) + "\n"
 
 
@@ -321,6 +342,28 @@ def main(argv: Optional[List[str]] = None) -> int:
             p = act(p, default, b, a.owner, a.dry_run, log)
             plans.append(p)
             log(f"{p.action:7} {repo} {b.name}{' #' + str(p.pr) if p.pr else ''} — {p.why}")
+    try:
+        owed = owed_reviews(a.owner)
+    except RuntimeError as e:
+        owed = []
+        log(f"⚠ the merged pull requests owed a review could not be listed — {e}")
+    for o in owed:
+        default = next(((r.get("defaultBranchRef") or {}).get("name") for r in repos if r["nameWithOwner"] == o["repo"]), "main")
+        if reviews_left <= 0:
+            plans.append(Plan(o["repo"], f"#{o['number']}", "owed", "its review waits for the next run (review budget spent)", o["number"]))
+            continue
+        reviews_left -= 1
+        p = Plan(o["repo"], f"#{o['number']}", "owed", "its review is sent to the reviewer, merged", o["number"])
+        if not a.dry_run:
+            try:
+                _space_out(time.sleep, time.time)
+                gh(["api", "-X", "POST", f"repos/{a.owner}/cicd-reviewer/dispatches", "--input", "-"], json.dumps({
+                    "event_type": "review-pr", "client_payload": {"repo": o["repo"], "pr_number": str(o["number"]),
+                                                                  "base_ref": default, "head_ref": default}}))
+            except RuntimeError as e:
+                p.why = f"its review could not be sent — {e}"
+        plans.append(p)
+        log(f"owed    {o['repo']} #{o['number']} — {p.why}")
     write_tracking(plans, a.dry_run, log)
     counts: Dict[str, int] = {}
     for p in plans:

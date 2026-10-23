@@ -52,6 +52,17 @@ def t_conflict_is_stuck_even_when_clean():
     assert p.action == "stuck"
 
 
+def t_open_pr_unreviewed_and_mergeable_is_handed_to_the_queue():
+    p = decide(facts(open_pr={"number": 7, "mergeable": "MERGEABLE", "head_sha": "abc"}, verdict=sweep.VERDICT_UNREVIEWED))
+    assert (p.action, p.pr) == ("merge", 7) and "down" in p.why
+
+
+def t_tracking_body_lists_the_reviews_owed():
+    body = sweep.tracking_body([sweep.Plan("o/r", "#9", "owed", "its review is sent to the reviewer, merged", 9)])
+    assert "REVIEW OWED" in body and "#9" in body
+    assert "REVIEW OWED" not in sweep.tracking_body([])
+
+
 def t_blocking_is_stuck():
     p = decide(facts(open_pr={"number": 7, "mergeable": "MERGEABLE", "head_sha": "abc"}, verdict=sweep.VERDICT_BLOCKING))
     assert p.action == "stuck"
@@ -77,6 +88,7 @@ def t_verdict_is_read_from_the_last_line_only():
     assert sweep.verdict_of("VERDICT: CLEAN\nbut then more text") is None
     assert sweep.verdict_of("no verdict here") is None
     assert sweep.verdict_of("x\nVERDICT: BLOCKING") == sweep.VERDICT_BLOCKING
+    assert sweep.verdict_of("the model was down\n\nVERDICT: UNREVIEWED") == sweep.VERDICT_UNREVIEWED
 
 
 def t_a_verdict_on_an_older_tip_does_not_count():

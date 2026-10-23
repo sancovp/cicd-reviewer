@@ -20,8 +20,8 @@ flowchart TB
     TRIG["cicd-review-on-pr.yml — a ready PR opened / marked ready / pushed; never a draft, never om-is-the-base · the SkillTree gate, then a dispatch"]:::trig
   end
   subgraph REV["REVIEWER REPO (public, free minutes)"]
-    REVIEW["review.yml → the REVIEWER (MODE=review) — one PR, its verdict on the exact tip; run checked on GitHub, retried once"]:::ai
-    QUEUE["merge-queue.yml → merge_queue.py — one run per repo at a time: ready · fresh · grouped by shared files · squash at the reviewed tip"]:::det
+    REVIEW["review.yml → the REVIEWER (MODE=review) — one PR, its verdict on the exact tip; run checked on GitHub, retried once · first outage.py asks whether the model answers: down ⇒ VERDICT: UNREVIEWED, no model · a merged review-owed PR ⇒ its late review (MODE=review-merged), a BLOCKING one opening a Fix owed issue"]:::ai
+    QUEUE["merge-queue.yml → merge_queue.py — one run per repo at a time: ready (CLEAN, or UNREVIEWED with its checks passed) · fresh · grouped by shared files · squash at the reviewed tip · an UNREVIEWED merge labelled review-owed"]:::det
     COORD["the COORDINATOR (MODE=coordinate) — overlapping ready PRs: their order, any holds"]:::ai
     SWEEP["sweep.yml → sweep.py — daily, every source repo: delete merged branches · park drafts · open missing PRs · dispatch reviews · hand CLEAN PRs to the queue"]:::det
     ISSUE["UNMERGED WORK — STUCK · PARKED (an issue on the canonical home)"]:::det
@@ -34,7 +34,7 @@ flowchart TB
   REVIEW -->|"hand off"| QUEUE
   QUEUE -->|"only when ready PRs overlap"| COORD
   QUEUE -->|"not fresh / after a merge: review again"| REVIEW
-  SWEEP -->|"dispatch review-pr, spaced"| REVIEW
+  SWEEP -->|"dispatch review-pr, spaced — and the late review of every merged review-owed PR"| REVIEW
   SWEEP -->|"merge-queue"| QUEUE
   SWEEP --> ISSUE
   ISSUE -->|"read first by the next session in that repo"| SESSION

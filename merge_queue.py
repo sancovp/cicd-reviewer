@@ -4,8 +4,10 @@
 Reviews run in parallel (they only read). MERGING runs here, one queue per repo (the workflow's concurrency group),
 deterministically, with the model called in exactly one place — when ready pull requests overlap:
 
-  1. READY = an open pull request into the default branch whose reviewer's verdict on its EXACT tip is CLEAN, that
-     GitHub calls MERGEABLE, and that the coordinator has not held at this tip.
+  1. READY = an open pull request into the default branch whose reviewer's verdict on its EXACT tip is CLEAN — or
+     UNREVIEWED (the model was down) with every automatic check passed — that GitHub calls MERGEABLE, and that the
+     coordinator has not held at this tip. MERGES NEVER WAIT ON THE MODEL: an UNREVIEWED pull request that merges is
+     labelled `review-owed`, and the sweep sends it to the reviewer once the model answers.
   2. FRESH = no commit has landed on the default branch, since that verdict was posted, touching any file the pull
      request touches. A verdict that is not fresh was given about a main that no longer exists: the pull request is
      reviewed again (dispatched, spaced) and waits. The shas and filenames this reads come from `--jq` as RAW strings
@@ -32,7 +34,8 @@ import tempfile
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Set
 
-from sweep import STANDING, VERDICT_BLOCKING, VERDICT_CLEAN, _space_out, gh, gh_json, gh_lines, gh_strings, verdict_of
+from sweep import (REVIEW_OWED, STANDING, VERDICT_BLOCKING, VERDICT_CLEAN, VERDICT_UNREVIEWED, _space_out, gh, gh_json,
+                   gh_lines, gh_strings, verdict_of)
 
 HELD = "held by the merge coordinator at"
 CONFLICT = "conflicts with"
@@ -51,6 +54,7 @@ class PR:
     verdict: Optional[str] = None
     verdict_at: Optional[str] = None
     comments: str = ""
+    checks: str = "pass"          # pass · pending · failing — the pull request's automatic checks
 
 
 # ── the pure decisions ─────────────────────────────────────────────────────────────────────────
@@ -63,6 +67,27 @@ def verdict_on_tip(reviews: List[dict], head: str):
             if v:
                 return v, rv.get("submitted_at")
     return None, None
+
+
+FAILED = {"FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"}
+WAITING = {"QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "REQUESTED", "EXPECTED"}
+
+
+def checks_state(rollup: List[dict]) -> str:
+    """`gh pr view --json statusCheckRollup`, reduced: failing when any check failed, pending while any still runs."""
+    pending = False
+    for c in rollup or []:
+        outcome = (c.get("conclusion") or c.get("state") or "").upper()
+        if outcome in FAILED:
+            return "failing"
+        if outcome in WAITING or (c.get("status") or "").upper() in WAITING:
+            pending = True
+    return "pending" if pending else "pass"
+
+
+def may_merge(p: PR) -> bool:
+    """the verdict lets it merge: CLEAN, or UNREVIEWED with every automatic check passed"""
+    return p.verdict == VERDICT_CLEAN or (p.verdict == VERDICT_UNREVIEWED and p.checks == "pass")
 
 
 def held_at_tip(p: PR) -> bool:
@@ -126,13 +151,14 @@ def apply_decision(group: List[PR], decision: Optional[dict]):
 
 def open_prs(repo: str, base: str) -> List[PR]:
     rows = gh_json(["pr", "list", "--repo", repo, "--state", "open", "--base", base, "--limit", "100", "--json",
-                    "number,title,headRefOid,headRefName,createdAt,mergeable,files,isDraft"]) or []
+                    "number,title,headRefOid,headRefName,createdAt,mergeable,files,isDraft,statusCheckRollup"]) or []
     prs = []
     for r in rows:
         if r.get("isDraft"):                 # a draft is parked or in progress: never reviewed, queued or merged
             continue
         p = PR(r["number"], r["title"], r["headRefOid"], r["headRefName"], r["createdAt"], r["mergeable"],
                {f["path"] for f in (r.get("files") or [])})
+        p.checks = checks_state(r.get("statusCheckRollup") or [])
         reviews = gh_lines(["api", f"repos/{repo}/pulls/{p.number}/reviews", "--paginate", "--jq",
                             ".[] | {commit_id, submitted_at, body}"])
         p.verdict, p.verdict_at = verdict_on_tip(reviews, p.head)
@@ -182,6 +208,18 @@ def dispatch_review(repo: str, p: PR, base: str, wait, now) -> None:
                                                       "base_ref": base, "head_ref": p.branch}}))
 
 
+def owe_review(repo: str, p: PR, log: Callable[[str], None]) -> bool:
+    """a pull request merged UNREVIEWED is labelled for its late review (the sweep sends it to the reviewer)"""
+    try:
+        gh(["label", "create", REVIEW_OWED, "--repo", repo, "--force", "--color", "d93f0b",
+            "--description", "merged while the reviewer's model was down; its review runs once the model answers"])
+        gh(["pr", "edit", str(p.number), "--repo", repo, "--add-label", REVIEW_OWED])
+        return True
+    except RuntimeError as e:
+        log(f"#{p.number} merged UNREVIEWED but could not be labelled {REVIEW_OWED} — {e}")
+        return False
+
+
 def comment_once(repo: str, p: PR, marker: str, body: str, dry: bool) -> None:
     if marker in p.comments or dry:
         return
@@ -194,7 +232,7 @@ def run(repo: str, dry: bool = False, log: Callable[[str], None] = print,
     wait, now = wait or time.sleep, now or time.time
     coordinate = coordinate or coordinate_with_reviewer
     base = gh_json(["repo", "view", repo, "--json", "defaultBranchRef"])["defaultBranchRef"]["name"]
-    report: Dict[str, list] = {"merged": [], "rereview": [], "held": [], "conflict": [], "waiting": []}
+    report: Dict[str, list] = {"merged": [], "rereview": [], "held": [], "conflict": [], "waiting": [], "owed": []}
     ready: List[PR] = []
     for p in open_prs(repo, base):
         if p.branch in STANDING:               # the standing branch is never queued, commented on or merged
@@ -206,7 +244,7 @@ def run(repo: str, dry: bool = False, log: Callable[[str], None] = print,
                          "reviewer reviews the new tip and the merge queue merges it.", dry)
             report["conflict"].append(p.number)
             continue
-        if p.verdict != VERDICT_CLEAN or p.mergeable != "MERGEABLE" or held_at_tip(p):
+        if not may_merge(p) or p.mergeable != "MERGEABLE" or held_at_tip(p):
             report["waiting"].append(p.number)
             continue
         if not fresh(p, changed_since(repo, base, p.verdict_at)):
@@ -217,7 +255,10 @@ def run(repo: str, dry: bool = False, log: Callable[[str], None] = print,
             continue
         ready.append(p)
     for g in groups(ready):
-        decision = coordinate(repo, g, log) if len(g) > 1 else None
+        # the coordinator is the model: a group holding an UNREVIEWED pull request was marked while it was down, so the
+        # group goes oldest first, and what overlaps the merge is reviewed (or marked) again against the new main
+        unreviewed = any(p.verdict == VERDICT_UNREVIEWED for p in g)
+        decision = coordinate(repo, g, log) if len(g) > 1 and not unreviewed else None
         first, holds, rereview = apply_decision(g, decision)
         for p, reason in holds:
             marker = f"{HELD} {p.head[:12]}"
@@ -236,6 +277,8 @@ def run(repo: str, dry: bool = False, log: Callable[[str], None] = print,
                     first = None
             if first:
                 report["merged"].append(first.number)
+                if first.verdict == VERDICT_UNREVIEWED and not dry and owe_review(repo, first, log):
+                    report["owed"].append(first.number)
         for p in rereview:
             log(f"#{p.number} overlaps what just merged — reviewed again against the new {base}")
             if not dry:

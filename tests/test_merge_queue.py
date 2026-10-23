@@ -107,11 +107,11 @@ def fake_github(prs, changed_files_by_sha=None, commits_since=None):
     return gh, calls
 
 
-def ghpr(n, files, head=None, created=None, mergeable="MERGEABLE", verdict="VERDICT: CLEAN", comments=""):
+def ghpr(n, files, head=None, created=None, mergeable="MERGEABLE", verdict="VERDICT: CLEAN", comments="", checks=None):
     head = head or f"sha{n}"
     return {"number": n, "title": f"pr {n}", "headRefOid": head, "headRefName": f"b{n}",
             "createdAt": created or f"2026-01-0{n}T00:00:00Z", "mergeable": mergeable,
-            "files": [{"path": f} for f in files],
+            "files": [{"path": f} for f in files], "statusCheckRollup": checks or [],
             "reviews": [{"commit_id": head, "submitted_at": "2026-01-10T00:00:00Z", "body": f"ok\n{verdict}"}],
             "comments": comments}
 
@@ -129,7 +129,46 @@ def _run(prs, coordinate=None, **kw):
     merges = [c[0] for c in calls if c[0][:2] == ["pr", "merge"]]
     dispatched = [json.loads(c[1])["client_payload"]["pr_number"] for c in calls if c[1] and "review-pr" in c[1]]
     comments = [c[0] for c in calls if c[0][:2] == ["pr", "comment"]]
+    _run.labels = [c[0] for c in calls if c[0][:2] == ["pr", "edit"]]
     return rep, merges, dispatched, comments
+
+
+UNREVIEWED = "VERDICT: UNREVIEWED"
+OK_CHECKS = [{"__typename": "CheckRun", "status": "COMPLETED", "conclusion": "SUCCESS"},
+             {"__typename": "StatusContext", "state": "SUCCESS"}]
+
+
+def t_checks_are_failing_pending_or_passed():
+    assert mq.checks_state([]) == "pass" and mq.checks_state(OK_CHECKS) == "pass"
+    assert mq.checks_state(OK_CHECKS + [{"status": "COMPLETED", "conclusion": "FAILURE"}]) == "failing"
+    assert mq.checks_state([{"state": "ERROR"}]) == "failing"
+    assert mq.checks_state(OK_CHECKS + [{"status": "IN_PROGRESS", "conclusion": None}]) == "pending"
+    assert mq.checks_state([{"state": "PENDING"}]) == "pending"
+
+
+def t_an_unreviewed_pr_whose_checks_pass_merges_and_is_owed_its_review():
+    """the model down never stops main: the queue merges on the automatic checks and labels it for the late review"""
+    rep, merges, disp, _ = _run([ghpr(1, {"a"}, verdict=UNREVIEWED, checks=OK_CHECKS)])
+    assert rep["merged"] == [1] and rep["owed"] == [1], rep
+    assert any("--add-label" in a and sweep.REVIEW_OWED in a for a in _run.labels), _run.labels
+
+
+def t_an_unreviewed_pr_with_a_failing_or_running_check_waits():
+    for checks in ([{"status": "COMPLETED", "conclusion": "FAILURE"}], [{"status": "IN_PROGRESS"}]):
+        rep, merges, disp, _ = _run([ghpr(1, {"a"}, verdict=UNREVIEWED, checks=checks)])
+        assert merges == [] and rep["waiting"] == [1], (checks, rep)
+
+
+def t_a_clean_pr_is_never_labelled_owed():
+    rep, merges, disp, _ = _run([ghpr(1, {"a"})])
+    assert rep["merged"] == [1] and rep["owed"] == [] and _run.labels == []
+
+
+def t_a_group_holding_an_unreviewed_pr_goes_oldest_first_without_the_coordinator():
+    asked = []
+    rep, merges, disp, _ = _run([ghpr(1, {"a"}), ghpr(2, {"a"}, verdict=UNREVIEWED, checks=OK_CHECKS)],
+                                coordinate=lambda r, g, log: asked.append(g) or {"order": [2, 1]})
+    assert asked == [] and rep["merged"] == [1] and rep["rereview"] == [2], rep
 
 
 def t_two_independent_prs_both_merge():

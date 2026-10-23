@@ -14,7 +14,9 @@ The session's side of the flow is also a rule every session carries: `top-level-
 
 **WORK IS DONE ONLY WHEN IT IS ON THE DEFAULT BRANCH, AND ONLY THE MERGE QUEUE MERGES.** Sessions write the work and
 hand it off as a pull request; the CI reviews it, merges it one at a time, and sweeps every repository so no branch is
-left holding work that is not on its default branch. No human does git, and no session merges. Git's API decides
+left holding work that is not on its default branch. **MERGES NEVER WAIT ON THE MODEL:** when the reviewer's model does not
+answer, a pull request merges on its automatic checks and is reviewed after it merges (§2), so one model provider running
+out never stops every session's work from reaching the default branch. No human does git, and no session merges. Git's API decides
 everything git's API can decide; the model is called only for what needs judgment — reading a change (the reviewer),
 and reading several changes together (the coordinator).
 
@@ -27,6 +29,11 @@ and reading several changes together (the coordinator).
  PR opened READY by the session ───────────────────────────────────────────── one review
         │                     (a DRAFT is parked or in progress: nothing fires, ever)
         ▼
+ first: is the model answering? (one one-token question, three tries a minute apart — outage.py)
+        ├─ no ──▶ VERDICT: UNREVIEWED on the tip, posted without the model ──▶ the merge queue, which merges it once every
+        │         automatic check passed and labels it `review-owed` ──▶ the sweep sends it to the reviewer, merged, once the
+        │         model answers ──▶ its late review: CLEAN takes the label off · BLOCKING opens a "Fix owed" issue
+        ▼ yes
  REVIEWED — the review's last line is the verdict, on the PR's exact tip
         ├─ VERDICT: BLOCKING ──▶ the session fixes and pushes ──▶ one review of the new tip
         └─ VERDICT: CLEAN ──▶ the merge queue (one run at a time per repo)
@@ -54,6 +61,7 @@ never runs past `--max-hours` (default 4): it exits TIMEOUT saying where the pul
 | READY | asking for a review | the reviewer |
 | BLOCKING | a real defect found | the session that owns the work: fix, push |
 | CLEAN | reviewed and fine on this exact tip | the merge queue |
+| UNREVIEWED | the model did not answer at this tip; merged once its automatic checks pass, then labelled `review-owed` | the merge queue; after the merge, the sweep and the late review |
 | STALE | CLEAN, but main has since changed its files | the queue sends it for review again |
 | CONFLICT | GitHub cannot merge it | the session: merge the default branch in, both sides kept, push |
 | HELD | the coordinator found it contradicts or breaks with another | the session, with the coordinator's reason |
@@ -65,7 +73,8 @@ never runs past `--max-hours` (default 4): it exits TIMEOUT saying where the pul
 |---|---|---|---|
 | a PR opened ready, marked ready, reopened, or pushed to while ready — never a draft, never `om-is-the-base` | `cicd-review-on-pr.yml` (the canonical home — private, billed, ~1 min: the SkillTree structure gate, then a dispatch) → `review.yml` (here) | one review | yes, one review |
 | a review finishes | `review.yml` hands off → `merge-queue.yml` (here) | the merge queue | only if PRs overlap (the coordinator) |
-| daily, 07:17 UTC | `sweep.yml` (here) | the sweep over every source repo | only in the reviews it dispatches, ≤10 a run, 3 min apart |
+| daily, 07:17 UTC | `sweep.yml` (here) | the sweep over every source repo, and the late reviews owed | only in the reviews it dispatches, ≤10 a run, 3 min apart |
+| the model refuses (429 · 5xx · no answer · 401/403), three tries a minute apart | `review.yml`'s first step (`outage.py probe`) | `VERDICT: UNREVIEWED` posted on the tip, the queue handed it | no — one one-token question |
 | a push to the default branch | the canonical home's `publish-on-main.yml` | publishing (path-gated) — not the CI | no |
 
 A commit does not call the CI. A push to a branch with no ready PR does not call it. Nothing fires when a branch is
@@ -76,6 +85,7 @@ created: a session opens its own PR, and the sweep opens one for a branch left w
 | tier | reads | decides | skill |
 |---|---|---|---|
 | **THE REVIEWER** (`MODE=review`) | one PR's diff | its verdict: the review's last line, `VERDICT: CLEAN` or `VERDICT: BLOCKING`, posted with `--comment` (GitHub refuses approve / request-changes from the account that owns the PR) | `cicd_aios/.claude/skills/review-pr-diff` |
+| **THE LATE REVIEW** (`MODE=review-merged`) | one PR merged `UNREVIEWED`, its diff | its verdict, as a comment on the merged PR ending `VERDICT: CLEAN` or `VERDICT: BLOCKING`; BLOCKING opens a "Fix owed" issue (`outage.py close-late`) | `cicd_aios/.claude/skills/review-pr-diff` |
 | **THE COORDINATOR** (`MODE=coordinate`) | every ready, fresh PR that shares files with another | their merge order, and which to HOLD (contradicts, undoes or breaks with another), each with a one-sentence reason — written to `/out/decision.json` | `cicd_aios/.claude/skills/coordinate-merges` |
 
 Both tiers run in heaven's AGENT MODE: one conversation, up to 100 rounds (`CICD_ITERATIONS`) of at most 15 tool calls
@@ -88,26 +98,30 @@ comments or reviews; the queue acts on its file, and with no decision falls back
 ## 5. The merge queue (`merge_queue.py` · `.github/workflows/merge-queue.yml`)
 
 One run at a time per repository (the workflow's concurrency group). A PR is **ready** when it is open into the default
-branch, not a draft, not the standing branch, its verdict on its exact tip is CLEAN, GitHub calls it mergeable, and it is
-not held at this tip. It is **fresh** when no commit has landed on the default branch since that verdict touching any of
+branch, not a draft, not the standing branch, its verdict on its exact tip is CLEAN — or UNREVIEWED with every automatic
+check passed (none failed, none still running; `checks_state`) — GitHub calls it mergeable, and it is not held at this tip. It is **fresh** when no commit has landed on the default branch since that verdict touching any of
 its files (more than 100 commits since ⇒ not fresh). Ready-and-fresh PRs are grouped by shared files: a group of one
 merges; a larger group goes to the coordinator, the first in its order merges, the rest are reviewed again against the
-new main, each held one gets one comment. A CONFLICT gets one comment. Every merge is a squash at the reviewed tip
+new main, each held one gets one comment; a group holding an UNREVIEWED PR skips the coordinator (it is the model, which
+was down) and goes oldest first. A PR merged UNREVIEWED is labelled `review-owed`. A CONFLICT gets one comment. Every merge is a squash at the reviewed tip
 (`--match-head-commit`), the branch deleted. Never a force push.
 
 ## 6. The sweep (`sweep.py` · `.github/workflows/sweep.yml`)
 
 Daily over every source repository the owner has (not forks, not archived), every branch except the default and the
 standing branch: its tip already on the default branch (GraphQL's comparison — never the REST diff, which fails on large
-ones) ⇒ deleted · a draft PR ⇒ PARKED · a ready PR with a CLEAN verdict ⇒ its repo handed to the merge queue · no verdict
-⇒ a review dispatched · no PR ⇒ one opened, ready · a CONFLICT or BLOCKING ⇒ STUCK · a branch of a PUBLISH TARGET (a repo
+ones) ⇒ deleted · a draft PR ⇒ PARKED · a ready PR with a CLEAN or UNREVIEWED verdict ⇒ its repo handed to the merge queue ·
+no verdict ⇒ a review dispatched · no PR ⇒ one opened, ready · a CONFLICT or BLOCKING ⇒ STUCK · a branch of a PUBLISH TARGET (a repo
 the publishing pipeline overwrites, read from `scalable-publishing/publish-manifest.json`) ⇒ STUCK, to be ported into its
-source in the canonical home, never merged there.
+source in the canonical home, never merged there. Then every merged PR labelled `review-owed`, in any repository the
+owner has, is sent to the reviewer, merged (its default branch checked out), within the same review budget: its late
+review runs once the model answers, and the label stays until a verdict lands.
 
 ## 7. The tracking issue — `UNMERGED WORK`
 
-One issue on the canonical home, rewritten by every sweep, two lists: **STUCK** (work the CI cannot move — conflicts,
-BLOCKING verdicts, publish targets; each with why) and **PARKED** (drafts). A session starting work in a repository reads
+One issue on the canonical home, rewritten by every sweep: **STUCK** (work the CI cannot move — conflicts,
+BLOCKING verdicts, publish targets; each with why), **PARKED** (drafts), and **REVIEW OWED** (merged while the model was
+down, their late reviews pending). A late review that finds a defect opens its own "Fix owed" issue in its repository. A session starting work in a repository reads
 that repository's STUCK rows and clears them before anything else.
 
 ## 8. Repositories and their policy
@@ -135,12 +149,17 @@ reviewer must not approve a rule it wrote; who marks a rule PR ready is OPEN (th
 The reviewer's image `ghcr.io/sancovp/cicd-reviewer` (built by `build-image.yml` when `ci_agent.py`, `cicd_aios/`,
 `entrypoint.sh` or the `Dockerfile` change) runs on this public repo's runners with two secrets: `MINIMAX_API_KEY` (the
 model) and `PUBLISH_TOKEN` (reads the private canonical home, posts reviews and comments, merges, deletes branches,
-edits the issue). This directory is authored in the canonical home at `automation/cicd-reviewer/` and mirrored here by
+edits the issue). **The reviewer's MiniMax plan is the reviewer's alone:** no box, seat, agent or test runs on it, so
+nothing else can spend it; anything else that needs MiniMax runs on a plan of its own. The test business's JobWorld box and
+the HealthWorld box ran on it; both are off until each has a plan of its own (the board's OPEN). This directory is authored in the canonical home at `automation/cicd-reviewer/` and mirrored here by
 `scalable-publishing` on every push to the default branch that touches it — never edited here.
 
 ## 11. Laws
 
-- Only the merge queue merges; nothing merges without a verdict on the exact tip; a verdict counts only while fresh.
+- Only the merge queue merges; nothing merges without a verdict on the exact tip — CLEAN, or UNREVIEWED with every
+  automatic check passed — and a verdict counts only while fresh.
+- Merges never wait on the model: a PR merged UNREVIEWED is reviewed after it merges, and a defect found then opens a fix.
+- The reviewer's MiniMax plan is the reviewer's alone.
 - Nothing fires on a draft or on the standing branch.
 - The model never does what git's API can do.
 - No fork-reachable trigger on any workflow here: this public repo holds a token that reads the private canonical home.
@@ -161,13 +180,16 @@ edits the issue). This directory is authored in the canonical home at `automatio
 | the freshness check read `gh api --jq '.[].sha'` through the JSON-per-line reader; `--jq` prints a string raw, so the first sha after any commit on main crashed the run — nine queue runs failed in a row and nothing merged for hours while every verdict was CLEAN | `gh_strings` reads `--jq` string output raw; the tests' fake GitHub answers those calls raw, as gh does, so the crash fails a test |
 | sessions waited on hand-written loops: one baselined CONFLICTING and looped four hours (#1561), one started after its merge and ran all night (#1599), one had to be patched to keep going past CLEAN (#1566) — each a deploy or a fix hours late | the PR watch (`pr_watch.py`): checks before it waits, exits on every state the session must act on, never past its cap; a test per failure |
 | every push to a PR re-reviewed half-finished work | reviews only for ready PRs; drafts fire nothing |
+| a test JobWorld box's heartbeat, left on, spent the whole MiniMax plan the reviewer runs on, and no pull request from any session could merge for days | the plan is the reviewer's alone (§10); the model's check marks a tip UNREVIEWED and the queue merges it on its automatic checks, the review after the merge (§2) |
 | an AI opening PRs on branch creation raced the sessions' own | removed; sessions open their own, the sweep catches the rest |
 
 ## 13. Built, and owed
 
 BUILT and proven live: the verdict line · the merge queue (#1486, #1487, #1488, #1490, #1491 merged with nobody
 touching them) · the coordinator (asked about #1476 and #1477, it held #1477 with the exact reason) · the sweep (389 merged
-branches deleted, 23 PRs opened) · the tracking issue · draft parking. ASPIRATIONAL: the review trigger in every active
+branches deleted, 23 PRs opened) · the tracking issue · draft parking. BUILT, tests green, to prove live while the model
+is down: the model's check and the UNREVIEWED mark · the queue merging UNREVIEWED on its checks and labelling it · the late
+review and its "Fix owed" issue. ASPIRATIONAL: the review trigger in every active
 repo (§8) · the harvest moved here, drafting its rule PRs (§9) · a cost meter (reviews and model spend per day).
 
 ## 14. How to change it
@@ -176,5 +198,5 @@ Edit here, in the canonical home, never in the public repo. A change opens a rea
 reviews its own code and the queue merges it — except a change to the merge path itself, which cannot review itself
 before it is published: merge it after a CLEAN verdict by hand, then prove the published version live. Run before every
 push: `python3 tests/test_merge_queue.py` · `python3 tests/test_sweep.py` · `python3 tests/test_ci_agent.py` ·
-`python3 tests/test_pr_watch.py`, all green;
+`python3 tests/test_pr_watch.py` · `python3 tests/test_outage.py`, all green;
 a guard added gets a test that fails with the guard removed. After a publish, prove the changed path live on a real PR.

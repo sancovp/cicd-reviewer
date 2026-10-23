@@ -86,6 +86,22 @@ def t_a_review_counts_only_with_a_verdict_on_the_tip_posted_this_run():
     assert not vp([], "t", "2026-01-01T00:00:00Z")
 
 
+def t_the_late_review_comments_on_the_merged_pr_and_demands_the_verdict_line():
+    p = ci_agent._late_review_prompt("o/r", "9")
+    assert "MERGED" in p and "gh pr diff 9 --repo o/r" in p and "gh pr comment 9 --repo o/r" in p
+    assert "VERDICT: CLEAN" in p and "VERDICT: BLOCKING" in p
+
+
+def t_a_late_review_counts_only_with_a_verdict_comment_posted_this_run():
+    lp = ci_agent.late_verdict_posted
+    ok = {"created_at": "2026-01-02T00:00:00Z", "body": "read it\nVERDICT: BLOCKING"}
+    assert lp([ok], "2026-01-01T00:00:00Z")
+    assert not lp([ok], "2026-01-03T00:00:00Z")
+    assert not lp([dict(ok, body="no verdict")], "2026-01-01T00:00:00Z")
+    src = open(_CI_AGENT).read()
+    assert 'if mode == "review-merged":\n        return _late_review_landed(' in src
+
+
 def t_coordinate_prompt_names_the_skill_the_output_and_forbids_acting():
     p = ci_agent._coordinate_prompt("o/r", '[{"number": 1}]')
     assert "coordinate-merges" in p and "/out/decision.json" in p and "do not merge" in p and "o/r" in p
