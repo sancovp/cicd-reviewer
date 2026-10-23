@@ -4,7 +4,7 @@ What this dir is FOR: the CI that gets work from a branch onto its default branc
 one pull request and ends with a verdict), the coordinator (an AI above the reviews, called when ready pull requests
 overlap), the merge queue (`merge_queue.py`, the only thing that merges), the PR watch (`pr_watch.py`, how a session waits on
 its pull request), the outage path (`outage.py`: when the model does not answer, a pull request is marked UNREVIEWED,
-merges on its automatic checks and is reviewed after), and the daily sweep (`sweep.py`) over every
+merges on its own workflows' checks and is reviewed after), and the daily sweep (`sweep.py`) over every
 repository. `cicd_aios/` is the reviewer agent's own AIOS (its identity, rules and skills, baked into its image);
 `.github/workflows/` runs it on the public `sancovp/cicd-reviewer`, where this directory is published.
 

@@ -38,4 +38,4 @@ real pull request) → **LIVE** (what every pull request goes through). `●` = 
 | the review trigger in every active repo | [§8](../../DESIGN.md) | ● | | | |
 | the rule harvest moved here, its rule pull requests drafts | [§9](../../DESIGN.md) | ● | | | |
 | a cost meter — reviews and model spend per day | [§13](../../DESIGN.md) | ● | | | |
-| merges never wait on the model — the model's check, the UNREVIEWED mark, the queue merging on the automatic checks, the late review and its fix issue | [§2](../../DESIGN.md) · [§5](../../DESIGN.md) · [§6](../../DESIGN.md) | ● | ● | | |
+| merges never wait on the model — the model's check, the UNREVIEWED mark, the queue merging on its own workflows' checks, the late review and its fix issue | [§2](../../DESIGN.md) · [§5](../../DESIGN.md) · [§6](../../DESIGN.md) | ● | ● | | |

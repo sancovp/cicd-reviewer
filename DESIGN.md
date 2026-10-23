@@ -15,7 +15,7 @@ The session's side of the flow is also a rule every session carries: `top-level-
 **WORK IS DONE ONLY WHEN IT IS ON THE DEFAULT BRANCH, AND ONLY THE MERGE QUEUE MERGES.** Sessions write the work and
 hand it off as a pull request; the CI reviews it, merges it one at a time, and sweeps every repository so no branch is
 left holding work that is not on its default branch. **MERGES NEVER WAIT ON THE MODEL:** when the reviewer's model does not
-answer, a pull request merges on its automatic checks and is reviewed after it merges (§2), so one model provider running
+answer, a pull request merges on the checks its repository's own workflows run and is reviewed after it merges (§2), so one model provider running
 out never stops every session's work from reaching the default branch. No human does git, and no session merges. Git's API decides
 everything git's API can decide; the model is called only for what needs judgment — reading a change (the reviewer),
 and reading several changes together (the coordinator).
@@ -31,7 +31,7 @@ and reading several changes together (the coordinator).
         ▼
  first: is the model answering? (one one-token question, three tries a minute apart — outage.py)
         ├─ no ──▶ VERDICT: UNREVIEWED on the tip, posted without the model ──▶ the merge queue, which merges it once every
-        │         automatic check passed and labels it `review-owed` ──▶ the sweep sends it to the reviewer, merged, once the
+        │         own-workflow check passed and labels it `review-owed` ──▶ the sweep sends it to the reviewer, merged, once the
         │         model answers ──▶ its late review: CLEAN takes the label off · BLOCKING opens a "Fix owed" issue
         ▼ yes
  REVIEWED — the review's last line is the verdict, on the PR's exact tip
@@ -61,7 +61,7 @@ never runs past `--max-hours` (default 4): it exits TIMEOUT saying where the pul
 | READY | asking for a review | the reviewer |
 | BLOCKING | a real defect found | the session that owns the work: fix, push |
 | CLEAN | reviewed and fine on this exact tip | the merge queue |
-| UNREVIEWED | the model did not answer at this tip; merged once its automatic checks pass, then labelled `review-owed` | the merge queue; after the merge, the sweep and the late review |
+| UNREVIEWED | the model did not answer at this tip; merged once its own workflows' checks pass, then labelled `review-owed` | the merge queue; after the merge, the sweep and the late review |
 | STALE | CLEAN, but main has since changed its files | the queue sends it for review again |
 | CONFLICT | GitHub cannot merge it | the session: merge the default branch in, both sides kept, push |
 | HELD | the coordinator found it contradicts or breaks with another | the session, with the coordinator's reason |
@@ -98,13 +98,20 @@ comments or reviews; the queue acts on its file, and with no decision falls back
 ## 5. The merge queue (`merge_queue.py` · `.github/workflows/merge-queue.yml`)
 
 One run at a time per repository (the workflow's concurrency group). A PR is **ready** when it is open into the default
-branch, not a draft, not the standing branch, its verdict on its exact tip is CLEAN — or UNREVIEWED with every automatic
-check passed (none failed, none still running; `checks_state`) — GitHub calls it mergeable, and it is not held at this tip. It is **fresh** when no commit has landed on the default branch since that verdict touching any of
+branch, not a draft, not the standing branch, its verdict on its exact tip is CLEAN — or UNREVIEWED with every check its
+repository's own workflows ran passed (none failed, none still running; `checks_state`) — GitHub calls it mergeable, and it is not held at this tip. It is **fresh** when no commit has landed on the default branch since that verdict touching any of
 its files (more than 100 commits since ⇒ not fresh). Ready-and-fresh PRs are grouped by shared files: a group of one
 merges; a larger group goes to the coordinator, the first in its order merges, the rest are reviewed again against the
 new main, each held one gets one comment; a group holding an UNREVIEWED PR skips the coordinator (it is the model, which
 was down) and goes oldest first. A PR merged UNREVIEWED is labelled `review-owed`. A CONFLICT gets one comment. Every merge is a squash at the reviewed tip
 (`--match-head-commit`), the branch deleted. Never a force push.
+
+**The checks it counts** are those the repository's own workflows run — GitHub gives each a workflow name. An outside
+app's check (a hosting provider's preview build, a commit status) carries none and is not counted: Cloudflare's preview
+build of the business site runs on every pull request in the canonical home, whatever it touches, and fails on every one.
+In the canonical home the own checks are the review trigger's SkillTree structure gate (§3) and, for the inner app's
+source, `validate-inner-app.yml`; no workflow runs a project's tests, so a pull request merged UNREVIEWED is read only by
+its late review.
 
 ## 6. The sweep (`sweep.py` · `.github/workflows/sweep.yml`)
 
@@ -157,7 +164,7 @@ the HealthWorld box ran on it; both are off until each has a plan of its own (th
 ## 11. Laws
 
 - Only the merge queue merges; nothing merges without a verdict on the exact tip — CLEAN, or UNREVIEWED with every
-  automatic check passed — and a verdict counts only while fresh.
+  check of the repository's own workflows passed — and a verdict counts only while fresh.
 - Merges never wait on the model: a PR merged UNREVIEWED is reviewed after it merges, and a defect found then opens a fix.
 - The reviewer's MiniMax plan is the reviewer's alone.
 - Nothing fires on a draft or on the standing branch.
@@ -180,7 +187,8 @@ the HealthWorld box ran on it; both are off until each has a plan of its own (th
 | the freshness check read `gh api --jq '.[].sha'` through the JSON-per-line reader; `--jq` prints a string raw, so the first sha after any commit on main crashed the run — nine queue runs failed in a row and nothing merged for hours while every verdict was CLEAN | `gh_strings` reads `--jq` string output raw; the tests' fake GitHub answers those calls raw, as gh does, so the crash fails a test |
 | sessions waited on hand-written loops: one baselined CONFLICTING and looped four hours (#1561), one started after its merge and ran all night (#1599), one had to be patched to keep going past CLEAN (#1566) — each a deploy or a fix hours late | the PR watch (`pr_watch.py`): checks before it waits, exits on every state the session must act on, never past its cap; a test per failure |
 | every push to a PR re-reviewed half-finished work | reviews only for ready PRs; drafts fire nothing |
-| a test JobWorld box's heartbeat, left on, spent the whole MiniMax plan the reviewer runs on, and no pull request from any session could merge for days | the plan is the reviewer's alone (§10); the model's check marks a tip UNREVIEWED and the queue merges it on its automatic checks, the review after the merge (§2) |
+| a test JobWorld box's heartbeat, left on, spent the whole MiniMax plan the reviewer runs on, and no pull request from any session could merge for days | the plan is the reviewer's alone (§10); the model's check marks a tip UNREVIEWED and the queue merges it on its own workflows' checks, the review after the merge (§2) |
+| the first queue built to merge UNREVIEWED pull requests counted every check, and Cloudflare's preview build of the business site fails on every pull request in the canonical home, so it would have merged none | the queue counts only the checks the repository's own workflows run (§5); a test pins Cloudflare's own shape, and fails with the guard removed |
 | an AI opening PRs on branch creation raced the sessions' own | removed; sessions open their own, the sweep catches the rest |
 
 ## 13. Built, and owed

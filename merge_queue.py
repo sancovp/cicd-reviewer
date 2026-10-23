@@ -5,7 +5,7 @@ Reviews run in parallel (they only read). MERGING runs here, one queue per repo 
 deterministically, with the model called in exactly one place — when ready pull requests overlap:
 
   1. READY = an open pull request into the default branch whose reviewer's verdict on its EXACT tip is CLEAN — or
-     UNREVIEWED (the model was down) with every automatic check passed — that GitHub calls MERGEABLE, and that the
+     UNREVIEWED (the model was down) with every check the repository's own workflows ran passed — that GitHub calls MERGEABLE, and that the
      coordinator has not held at this tip. MERGES NEVER WAIT ON THE MODEL: an UNREVIEWED pull request that merges is
      labelled `review-owed`, and the sweep sends it to the reviewer once the model answers.
   2. FRESH = no commit has landed on the default branch, since that verdict was posted, touching any file the pull
@@ -54,7 +54,7 @@ class PR:
     verdict: Optional[str] = None
     verdict_at: Optional[str] = None
     comments: str = ""
-    checks: str = "pass"          # pass · pending · failing — the pull request's automatic checks
+    checks: str = "pass"          # pass · pending · failing — the checks the repository's own workflows ran
 
 
 # ── the pure decisions ─────────────────────────────────────────────────────────────────────────
@@ -74,9 +74,13 @@ WAITING = {"QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "REQUESTED", "EXPECTED
 
 
 def checks_state(rollup: List[dict]) -> str:
-    """`gh pr view --json statusCheckRollup`, reduced: failing when any check failed, pending while any still runs."""
+    """`gh pr view --json statusCheckRollup`, reduced to the repository's OWN workflow checks: failing when any failed,
+    pending while any still runs. A check with no workflow name is an outside app's (a hosting provider's preview build
+    of one project, a commit status): it is not counted, since it can fail on every pull request whatever it touches."""
     pending = False
     for c in rollup or []:
+        if not c.get("workflowName"):
+            continue
         outcome = (c.get("conclusion") or c.get("state") or "").upper()
         if outcome in FAILED:
             return "failing"
@@ -86,7 +90,7 @@ def checks_state(rollup: List[dict]) -> str:
 
 
 def may_merge(p: PR) -> bool:
-    """the verdict lets it merge: CLEAN, or UNREVIEWED with every automatic check passed"""
+    """the verdict lets it merge: CLEAN, or UNREVIEWED with every check of the repository's own workflows passed"""
     return p.verdict == VERDICT_CLEAN or (p.verdict == VERDICT_UNREVIEWED and p.checks == "pass")
 
 

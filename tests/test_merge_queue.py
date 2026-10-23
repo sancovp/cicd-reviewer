@@ -134,16 +134,28 @@ def _run(prs, coordinate=None, **kw):
 
 
 UNREVIEWED = "VERDICT: UNREVIEWED"
-OK_CHECKS = [{"__typename": "CheckRun", "status": "COMPLETED", "conclusion": "SUCCESS"},
-             {"__typename": "StatusContext", "state": "SUCCESS"}]
+OWN = {"__typename": "CheckRun", "workflowName": "CICD Review on PR"}
+OK_CHECKS = [dict(OWN, name="review", status="COMPLETED", conclusion="SUCCESS")]
+# GitHub's own shape for a hosting provider's preview build: a CheckRun with no workflow (Cloudflare's, on every PR)
+OUTSIDE_FAILED = {"__typename": "CheckRun", "name": "Workers Builds: aisaac", "workflowName": "", "status": "COMPLETED",
+                  "conclusion": "FAILURE"}
 
 
 def t_checks_are_failing_pending_or_passed():
     assert mq.checks_state([]) == "pass" and mq.checks_state(OK_CHECKS) == "pass"
-    assert mq.checks_state(OK_CHECKS + [{"status": "COMPLETED", "conclusion": "FAILURE"}]) == "failing"
-    assert mq.checks_state([{"state": "ERROR"}]) == "failing"
-    assert mq.checks_state(OK_CHECKS + [{"status": "IN_PROGRESS", "conclusion": None}]) == "pending"
-    assert mq.checks_state([{"state": "PENDING"}]) == "pending"
+    assert mq.checks_state(OK_CHECKS + [dict(OWN, status="COMPLETED", conclusion="FAILURE")]) == "failing"
+    assert mq.checks_state([dict(OWN, conclusion="CANCELLED")]) == "failing"
+    assert mq.checks_state(OK_CHECKS + [dict(OWN, status="IN_PROGRESS", conclusion=None)]) == "pending"
+    assert mq.checks_state([dict(OWN, status="QUEUED")]) == "pending"
+
+
+def t_only_the_repositorys_own_workflow_checks_count():
+    """an outside app's check (a preview build, a commit status) can fail on every PR whatever it touches"""
+    assert mq.checks_state(OK_CHECKS + [OUTSIDE_FAILED]) == "pass"
+    assert mq.checks_state(OK_CHECKS + [{"__typename": "StatusContext", "context": "x", "state": "ERROR"}]) == "pass"
+    assert mq.checks_state(OK_CHECKS + [dict(OUTSIDE_FAILED, conclusion=None, status="IN_PROGRESS")]) == "pass"
+    rep, merges, disp, _ = _run([ghpr(1, {"a"}, verdict=UNREVIEWED, checks=OK_CHECKS + [OUTSIDE_FAILED])])
+    assert rep["merged"] == [1] and rep["owed"] == [1], rep
 
 
 def t_an_unreviewed_pr_whose_checks_pass_merges_and_is_owed_its_review():
@@ -154,7 +166,7 @@ def t_an_unreviewed_pr_whose_checks_pass_merges_and_is_owed_its_review():
 
 
 def t_an_unreviewed_pr_with_a_failing_or_running_check_waits():
-    for checks in ([{"status": "COMPLETED", "conclusion": "FAILURE"}], [{"status": "IN_PROGRESS"}]):
+    for checks in ([dict(OWN, status="COMPLETED", conclusion="FAILURE")], [dict(OWN, status="IN_PROGRESS")]):
         rep, merges, disp, _ = _run([ghpr(1, {"a"}, verdict=UNREVIEWED, checks=checks)])
         assert merges == [] and rep["waiting"] == [1], (checks, rep)
 
