@@ -159,7 +159,10 @@ The reviewer's image `ghcr.io/sancovp/cicd-reviewer` (built by `build-image.yml`
 model) and `PUBLISH_TOKEN` (reads the private canonical home, posts reviews and comments, merges, deletes branches,
 edits the issue). **The reviewer's MiniMax plan is the reviewer's alone:** no box, seat, agent or test runs on it, so
 nothing else can spend it; anything else that needs MiniMax runs on a plan of its own. The test business's JobWorld box and
-the HealthWorld box ran on it; both are off until each has a plan of its own (the board's OPEN). This directory is authored in the canonical home at `automation/cicd-reviewer/` and mirrored here by
+the HealthWorld box ran on it, and no box holds its key: the test business's box runs signed out, or signed in by the owner
+to the owner's own Claude when a proof needs its agent to answer — GHL's review of the add-on the first
+(`application/jobworld` DESIGN §9 THE LAUNCH GATE); what it runs on for any other proof, and the HealthWorld box's
+model, are the board's OPEN, the HealthWorld box off until then. This directory is authored in the canonical home at `automation/cicd-reviewer/` and mirrored here by
 `scalable-publishing` on every push to the default branch that touches it — never edited here.
 
 ## 11. Laws

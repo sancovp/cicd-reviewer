@@ -16,7 +16,7 @@ A question only *USER* can answer moves: **RAISED** (named) → **PUT** (put to 
 | how fast other repos' pull requests should merge — daily through the sweep, or the review trigger installed in each active repo | [§8](../../DESIGN.md) | ● | | | |
 | OM Daily Driver (#1476, parked as a draft) — keep, change or drop | [§8](../../DESIGN.md) | ● | ● | | |
 | merges never wait on the model — ruled: when the reviewer's model is down, the queue merges on the automatic checks and the review runs after the merge; the reviewer's MiniMax plan is the reviewer's alone; until it answers, the session holding the CI lands every merge | [§2](../../DESIGN.md) · [§10](../../DESIGN.md) · [§14](../../DESIGN.md) | ● | ● | ● | ● |
-| a MiniMax plan of its own for the test business's JobWorld box and the HealthWorld box (both off until then), or which model each runs on | [§10](../../DESIGN.md) | ● | ● | | |
+| which model the HealthWorld box runs on (off until then), and the test business's JobWorld box for a proof other than GHL's review of the add-on | [§10](../../DESIGN.md) | ● | ● | | |
 
 ## THE FLOW
 
