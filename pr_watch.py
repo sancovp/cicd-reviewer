@@ -9,6 +9,9 @@ always exits:
   CLOSED     closed without merging
   CONFLICT   GitHub cannot merge it: merge the default branch in, push
   BLOCKING   the reviewer's verdict on the exact tip: fix, push
+  REVIEW-FAILED  the review trigger failed at the exact tip — no run there succeeded or is still running, the last
+             one failed — and no verdict is on the tip: no review is coming — re-run it when GitHub failed to start it;
+             jobs refused for the account's billing make the session the CI (DESIGN §5 THE QUEUE BY HAND)
   COMMENT    a new comment (the queue's conflict or hold notice, a person): read it — a deploy preview's status
              comment is not one: it is posted on every pull request and never asks the session for anything
   PUSHED     the tip moved under the watch: someone else pushed
@@ -16,9 +19,10 @@ always exits:
   GH-DOWN    gh failed on every try for --max-failures polls in a row
 
 It checks the pull request BEFORE it waits: a pull request already merged, closed, conflicting or blocked exits at
-once — a watch started after the event it waits for never sees a change, and would run until killed. A CLEAN verdict
-and a mergeable state that reads UNKNOWN for a poll are not actions: the queue moves a CLEAN pull request, and UNKNOWN
-is GitHub still computing.
+once — a watch started after the event it waits for never sees a change, and would run until killed. It reads the
+review trigger's run at the tip as well as the reviews: a run that failed posts no verdict, and a watch reading only the
+reviews waits on it until its cap. A CLEAN verdict and a mergeable state that reads UNKNOWN for a poll are not actions:
+the queue moves a CLEAN pull request, and UNKNOWN is GitHub still computing.
 
   python3 pr_watch.py <number> [--repo owner/name] [--expect-head <sha>] [--interval 60] [--max-hours 4]
 """
@@ -35,7 +39,13 @@ from sweep import VERDICT_BLOCKING, gh_json, verdict_of
 # deploy previews post a status comment on every pull request; none of them asks the session for anything
 PREVIEW_BOTS = {"cloudflare-workers-and-pages"}
 
-EXIT = {"MERGED": 0, "CLOSED": 0, "CONFLICT": 2, "BLOCKING": 2, "COMMENT": 2, "PUSHED": 2,
+# the canonical home's one trigger into the CI (DESIGN §3); a repository without it has no run to read
+REVIEW_TRIGGER = "CICD Review on PR"
+# a trigger run that ended these ways dispatched no review. `cancelled` is not one: the trigger's concurrency group
+# cancels a run that a newer one superseded, and that says nothing about whether a review is coming
+REVIEW_FAILED = {"failure", "startup_failure", "timed_out", "action_required"}
+
+EXIT = {"MERGED": 0, "CLOSED": 0, "CONFLICT": 2, "BLOCKING": 2, "REVIEW-FAILED": 2, "COMMENT": 2, "PUSHED": 2,
         "TIMEOUT": 3, "HEAD-MISMATCH": 4, "GH-DOWN": 5}
 
 
@@ -46,10 +56,13 @@ class Snap:
     head: str
     verdict: Optional[str]
     comments: int
+    review_failed: Optional[str] = None   # how the trigger's deciding run at the tip failed, else None
+    review_run_id: Optional[int] = None
 
 
 def snap_of(pr: dict) -> Snap:
-    """A `gh pr view --json state,mergeable,headRefOid,reviews,comments` answer, reduced to what the watch decides on."""
+    """A `gh pr view --json state,mergeable,headRefOid,reviews,comments` answer, plus `reviewRun` (the trigger's latest
+    run at the tip, from `review_run`), reduced to what the watch decides on."""
     head = pr.get("headRefOid") or ""
     verdict = None
     for rv in sorted(pr.get("reviews") or [], key=lambda r: r.get("submittedAt") or ""):
@@ -57,7 +70,27 @@ def snap_of(pr: dict) -> Snap:
             verdict = verdict_of(rv.get("body") or "") or verdict
     comments = [c for c in pr.get("comments") or []
                 if ((c.get("author") or {}).get("login") or "") not in PREVIEW_BOTS]
-    return Snap(pr.get("state") or "", pr.get("mergeable") or "UNKNOWN", head, verdict, len(comments))
+    run = pr.get("reviewRun") or {}
+    failed = None
+    if run.get("status") == "completed" and run.get("conclusion") in REVIEW_FAILED:
+        failed = run.get("conclusion")
+    return Snap(pr.get("state") or "", pr.get("mergeable") or "UNKNOWN", head, verdict, len(comments), failed,
+                run.get("id") if failed else None)
+
+
+def review_run(repo: Optional[str], head: str, api: Callable[[List[str]], dict] = gh_json) -> Optional[dict]:
+    """The review trigger's run that decides whether a review is coming at this exact commit — one still queued or
+    running, else one that succeeded, else the latest — as its id, status and conclusion; None when it has none."""
+    if not head:
+        return None
+    path = f"repos/{repo or '{owner}/{repo}'}/actions/runs?head_sha={head}&event=pull_request&per_page=50"
+    runs = [r for r in ((api(["api", path]) or {}).get("workflow_runs") or []) if r.get("name") == REVIEW_TRIGGER]
+    if not runs:
+        return None
+    running = [r for r in runs if r.get("status") != "completed"]
+    succeeded = [r for r in runs if r.get("conclusion") == "success"]
+    r = max(running or succeeded or runs, key=lambda r: r.get("created_at") or "")
+    return {"id": r.get("id"), "status": r.get("status"), "conclusion": r.get("conclusion")}
 
 
 def needs_action(s: Snap) -> Optional[str]:
@@ -70,6 +103,8 @@ def needs_action(s: Snap) -> Optional[str]:
         return "CONFLICT"
     if s.verdict == VERDICT_BLOCKING:
         return "BLOCKING"
+    if s.verdict is None and s.review_failed:
+        return "REVIEW-FAILED"
     return None
 
 
@@ -86,10 +121,15 @@ def changed(base: Snap, s: Snap) -> Optional[str]:
 
 
 def line(event: str, n: int, s: Snap, expect: Optional[str]) -> str:
+    run_view = f"`gh run view {s.review_run_id}`" if s.review_run_id else f"`gh run list --commit {s.head}`"
+    rerun = f"`gh run rerun {s.review_run_id}`" if s.review_run_id else "`gh run rerun` it"
     do = {"MERGED": "done — remove your worktree and local branch",
           "CLOSED": "closed unmerged — find out why before anything else",
           "CONFLICT": "merge the default branch in (keep both sides), push",
           "BLOCKING": "read the review, fix, push",
+          "REVIEW-FAILED": f"the review trigger's run at the tip ended {s.review_failed}, so no review is coming — "
+                           f"read it ({run_view}): GitHub failed to start it ⇒ {rerun}, then watch again · its jobs "
+                           f"refused for the account's billing ⇒ you are the CI (DESIGN §5 THE QUEUE BY HAND)",
           "COMMENT": "read the new comment",
           "PUSHED": "the tip moved under you — pull it before pushing",
           "TIMEOUT": "still open — check where it stands; watch again only if something is moving",
@@ -146,7 +186,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = ["pr", "view", str(a.number), "--json", "state,mergeable,headRefOid,reviews,comments"]
     if a.repo:
         args += ["--repo", a.repo]
-    return watch(a.number, lambda: gh_json(args), a.expect_head, a.interval, a.max_hours)
+
+    def fetch() -> dict:
+        p = gh_json(args)
+        p["reviewRun"] = review_run(a.repo, p.get("headRefOid") or "")
+        return p
+    return watch(a.number, fetch, a.expect_head, a.interval, a.max_hours)
 
 
 if __name__ == "__main__":

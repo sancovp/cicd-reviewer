@@ -18,11 +18,15 @@ CLEAN = "Looks fine.\n\nVERDICT: CLEAN"
 BLOCK = "A defect.\n\nVERDICT: BLOCKING"
 
 
-def pr(state="OPEN", mergeable="MERGEABLE", head="aaaa1111", reviews=(), comments=0):
+def pr(state="OPEN", mergeable="MERGEABLE", head="aaaa1111", reviews=(), comments=0, run=None):
     return {"state": state, "mergeable": mergeable, "headRefOid": head,
             "reviews": [{"commit": {"oid": oid}, "body": body, "submittedAt": f"2026-10-11T0{i}:00:00Z"}
                         for i, (oid, body) in enumerate(reviews)],
-            "comments": [{"body": "c"}] * comments}
+            "comments": [{"body": "c"}] * comments, "reviewRun": run}
+
+
+def run(status="completed", conclusion="success", id=42):
+    return {"id": id, "status": status, "conclusion": conclusion}
 
 
 class World:
@@ -101,6 +105,63 @@ def t_gh_failures_retry_then_give_up():
     assert w.run() == 0
     w = World(RuntimeError("401"))
     assert w.run(max_failures=3) == 5 and w.i == 3
+
+
+def t_a_failed_review_run_exits_at_once():
+    # #2435: the first attempt of the trigger's run at its tip failed before any job started, so no review came, and a
+    # watch reading only the reviews waits toward its cap; Actions refusing jobs for billing left every watch the same way
+    w = World(pr(run=run(conclusion="failure", id=77)))
+    assert w.run() == 2 and w.i == 1 and "REVIEW-FAILED" in w.lines[-1] and "gh run rerun 77" in w.lines[-1]
+    for ended in ("startup_failure", "timed_out", "action_required"):
+        assert World(pr(run=run(conclusion=ended))).run() == 2
+
+
+def t_a_review_run_failing_while_watched_exits():
+    w = World(pr(run=run(status="in_progress", conclusion=None)), pr(run=run(conclusion="failure")))
+    assert w.run() == 2 and w.i == 2 and "REVIEW-FAILED" in w.lines[-1]
+
+
+def t_a_running_or_rerun_review_keeps_waiting_until_it_lands():
+    w = World(pr(run=run(status="queued", conclusion=None)), pr(run=run(status="in_progress", conclusion=None)),
+              pr(run=run(), reviews=[("aaaa1111", CLEAN)]), pr(state="MERGED", run=run()))
+    assert w.run() == 0 and w.i == 4 and "MERGED" in w.lines[-1]
+
+
+def t_a_verdict_a_cancelled_run_or_a_draft_skip_is_no_failure():
+    w = World(pr(run=run(conclusion="failure"), reviews=[("aaaa1111", CLEAN)]), pr(state="MERGED"))
+    assert w.run() == 0 and w.i == 2
+    # the trigger's concurrency group cancels a run a newer one superseded: no news about the review
+    for ended in ("cancelled", "skipped"):
+        w = World(pr(run=run(conclusion=ended)), pr(state="MERGED"))
+        assert w.run() == 0 and w.i == 2
+
+
+def t_review_run_decides_by_every_run_at_the_tip():
+    def runs(*rs):
+        return lambda args: {"workflow_runs": [
+            {"name": pw.REVIEW_TRIGGER, "id": i, "status": st, "conclusion": c, "created_at": f"2026-11-09T18:0{i}:00Z"}
+            for i, (st, c) in enumerate(rs)] + [
+            {"name": "Publish on main (path-gated)", "id": 99, "status": "completed", "conclusion": "failure",
+             "created_at": "2026-11-09T19:00:00Z"}]}
+    done = lambda c: ("completed", c)
+    # #2423's tip: a draft's skipped run, then a ready_for_review run the next push cancelled — the latest decides
+    assert pw.review_run("o/r", "abc", runs(done("skipped"), done("cancelled")))["conclusion"] == "cancelled"
+    # a run that dispatched the review outranks a later cancelled one, and a running one outranks both
+    assert pw.review_run("o/r", "abc", runs(done("success"), done("cancelled")))["id"] == 0
+    assert pw.review_run("o/r", "abc", runs(done("success"), ("in_progress", None)))["id"] == 1
+    assert pw.review_run("o/r", "abc", runs(done("failure")))["conclusion"] == "failure"
+    calls = []
+    def api(args):
+        calls.append(args)
+        return {"workflow_runs": []}
+    assert pw.review_run("o/r", "abc", api) is None and "repos/o/r/actions/runs?head_sha=abc&event=pull_request" in calls[0][1]
+    assert pw.review_run(None, "abc", api) is None and "repos/{owner}/{repo}/" in calls[1][1]
+    assert pw.review_run("o/r", "", api) is None and len(calls) == 2
+
+
+def t_a_failed_run_with_no_id_names_the_commit_not_none():
+    w = World(pr(run={"status": "completed", "conclusion": "failure"}))
+    assert w.run() == 2 and "None" not in w.lines[-1] and "gh run list --commit aaaa1111" in w.lines[-1]
 
 
 def run_all():
