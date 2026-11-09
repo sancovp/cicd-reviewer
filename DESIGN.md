@@ -16,7 +16,10 @@ The session's side of the flow is also a rule every session carries: `top-level-
 hand it off as a pull request; the CI reviews it, merges it one at a time, and sweeps every repository so no branch is
 left holding work that is not on its default branch. **MERGES NEVER WAIT ON THE MODEL:** when the reviewer's model does not
 answer, a pull request merges on the checks its repository's own workflows run and is reviewed after it merges (§2), so one model provider running
-out never stops every session's work from reaching the default branch. No human does git, and no session merges. Git's API decides
+out never stops every session's work from reaching the default branch. **MERGES NEVER WAIT ON ACTIONS EITHER:** when GitHub
+Actions starts no job at all — the account's billing refused — nothing of the CI runs, so the session is the CI: it takes
+every ready pull request through the queue's steps by hand (§5 THE QUEUE BY HAND), and each one it merges is labelled
+`review-owed` and read by the reviewer once jobs start again. No human does git, and while the CI runs no session merges. Git's API decides
 everything git's API can decide; the model is called only for what needs judgment — reading a change (the reviewer),
 and reading several changes together (the coordinator).
 
@@ -54,6 +57,10 @@ checks before it waits, so a pull request already in one of those states exits a
 mergeable state of UNKNOWN are not actions (the queue moves a CLEAN pull request; UNKNOWN is GitHub computing). It
 never runs past `--max-hours` (default 4): it exits TIMEOUT saying where the pull request stands. Exit codes: 0 done ·
 2 act · 3 timeout · 4 merged at another tip · 5 gh down.
+
+**While GitHub Actions starts no job** (a review job that fails in seconds with no steps, its annotation naming the
+account's payments or spending limit), nothing above moves a pull request: the session hands its own off ready as always,
+then lands it — and every other ready pull request the stop holds up — by §5's queue by hand.
 
 | state | what it means | who moves it |
 |---|---|---|
@@ -99,7 +106,8 @@ comments or reviews; the queue acts on its file, and with no decision falls back
 ## 5. The merge queue (`merge_queue.py` · `.github/workflows/merge-queue.yml`)
 
 One run at a time per repository (the workflow's concurrency group). A PR is **ready** when it is open into the default
-branch, not a draft, not the standing branch, its verdict on its exact tip is CLEAN — or UNREVIEWED with every check its
+branch, not a draft, not from the standing branch or from the branch the repository's GitHub Pages site is built from
+(every merge deletes its branch, and that branch is the live site), its verdict on its exact tip is CLEAN — or UNREVIEWED with every check its
 repository's own workflows ran passed (none failed, none still running; `checks_state`) — GitHub calls it mergeable, and it is not held at this tip. It is **fresh** when no commit has landed on the default branch since that verdict touching any of
 its files (more than 100 commits since ⇒ not fresh). Ready-and-fresh PRs are grouped by shared files: a group of one
 merges; a larger group goes to the coordinator, the first in its order merges, the rest are reviewed again against the
@@ -114,10 +122,33 @@ In the canonical home the own checks are the review trigger's SkillTree structur
 source, `validate-inner-app.yml`; no workflow runs a project's tests, so a pull request merged UNREVIEWED is read only by
 its late review.
 
+**THE QUEUE BY HAND.** While GitHub Actions starts no job, the session does the queue's work itself, by the same tests
+and in the same order, in every repository the CI covers (§8). A pull request is ready when it is open into the default
+branch, not a draft, not from the standing branch or the Pages source branch, and GitHub calls it mergeable; the checks
+that never started are not counted. The session reads first every review already on its exact tip: a verdict the reviewer gave there stands, and a
+BLOCKING one is answered in writing — fixed on a new tip, or shown wrong — before anything else. Then it reads the diff
+whole and posts its verdict on that tip as the reviewer would, as a review comment (`gh pr review <n> --comment`, the
+channel the sweep and the queue read; an issue comment is invisible to them) — `VERDICT: CLEAN` or `VERDICT: BLOCKING`,
+each with its reason. A CLEAN one that is fresh merges as a squash at that tip
+(`gh pr merge <n> --squash --match-head-commit <sha>`, alone in its call), its branch then deleted in a call of its own
+(`gh api -X DELETE repos/<owner>/<repo>/git/refs/heads/<branch>`; the harness refuses `--delete-branch` on the merge),
+and is labelled `review-owed`, so the reviewer reads it once jobs start again; ready pull requests sharing files go
+oldest first, each next one read again against the new default branch. A BLOCKING one gets its reason, and a CONFLICT one
+comment; the session that owns it fixes it or merges the default branch in, and when that session has ended, the
+session holding the CI does. The session's own pull request goes the same way, its verdict and its label included; one
+the harness will not let the session that opened it merge is merged by the next session that holds the CI. No merge, no
+held pull request and nothing about the stop is ever put to the owner. A
+pull request that §8 never merges is not merged by hand either: a publish target's or a frozen copy's gets the comment
+that sends its work to its source in the canonical home, and one whose repository keeps its branch unmerged by design —
+a Pages source branch among them — is parked as a draft with its reason.
+
 ## 6. The sweep (`sweep.py` · `.github/workflows/sweep.yml`)
 
-Daily over every source repository the owner has (not forks, not archived), every branch except the default and the
-standing branch: its tip already on the default branch (GraphQL's comparison — never the REST diff, which fails on large
+Daily over every source repository the owner has (not forks, not archived), every branch except the default, the
+standing branch and the branch the repository's GitHub Pages site is built from (`pages_branch`: `repos/…/pages` is
+asked only where the repository's own `has_pages` says it has a site, so a token that cannot read Pages pauses only
+those repositories; a 404 means no site, and a repository whose site cannot be read is skipped that run, never swept
+blind): its tip already on the default branch (GraphQL's comparison — never the REST diff, which fails on large
 ones) ⇒ deleted · a draft PR ⇒ PARKED · a ready PR with a CLEAN or UNREVIEWED verdict ⇒ its repo handed to the merge queue ·
 no verdict ⇒ a review dispatched · no PR ⇒ one opened, ready · a CONFLICT or BLOCKING ⇒ STUCK · a branch of a PUBLISH TARGET (a repo
 the publishing pipeline overwrites, read from `scalable-publishing/publish-manifest.json`) ⇒ STUCK, to be ported into its
@@ -137,12 +168,15 @@ that repository's STUCK rows and clears them before anything else.
 | repository | how work reaches its default branch |
 |---|---|
 | the canonical home (`sanctuary-revolution-alpha`) | the full flow (§2) — the only repo that triggers reviews on its own PRs |
-| `host-aios-dev` · `aisaac` | committed straight to the default branch, no PR (their own rules) |
+| `host-aios-dev` · `aisaac` | committed straight to the default branch, no PR (their own rules); a PR the sweep opened for a branch there is parked as a draft, its branch's work reaching the default branch only by that repository's own loop |
 | every other source repo | PRs, reviewed and merged only through the daily sweep — a day per round (ASPIRATIONAL: the one-step trigger of §3 in each active repo) |
 | publish targets (`cave`, `chaincompiler`, `carton-mcp` …) | never merged into: their source is the canonical home |
+| frozen copies — a standalone repository whose project was folded into the canonical home (`onionmorph`, `agent-rts`, `twi-jobworld`, `gas_bootstrap_depth_system`, `map` — MAP at `base/crystal-ball-alpha/MAP/map`) or kept for reference only (`matrix`) | never merged into: a branch's work missing from the canonical home is ported there (union, zero deletes), by the project's own lane |
 
 The standing branch `om-is-the-base` (the mind_of_god machine's own line of work) is never reviewed, queued, swept or
-merged; its PR #165 is a draft.
+merged; its PR #165 is a draft. A repository's GitHub Pages source branch is the live site, so it is never queued, swept,
+merged or deleted either; of the owner's 15 Pages sites one is built from a branch other than its default —
+`director-cinematic-site`'s `gh-pages` — and the pull request the sweep once opened for it is parked as a draft.
 
 ## 9. Self-maintenance — the rule harvest (OFF)
 
@@ -157,21 +191,24 @@ reviewer must not approve a rule it wrote; who marks a rule PR ready is OPEN (th
 The reviewer's image `ghcr.io/sancovp/cicd-reviewer` (built by `build-image.yml` when `ci_agent.py`, `cicd_aios/`,
 `entrypoint.sh` or the `Dockerfile` change) runs on this public repo's runners with two secrets: `MINIMAX_API_KEY` (the
 model) and `PUBLISH_TOKEN` (reads the private canonical home, posts reviews and comments, merges, deletes branches,
-edits the issue). **The reviewer's MiniMax plan is the reviewer's alone:** no box, seat, agent or test runs on it, so
-nothing else can spend it; anything else that needs MiniMax runs on a plan of its own. The test business's JobWorld box and
-the HealthWorld box ran on it, and no box holds its key: the test business's box runs signed out, or signed in by the owner
-to the owner's own Claude when a proof needs its agent to answer — GHL's review of the add-on the first
-(`application/jobworld` DESIGN §9 THE LAUNCH GATE); what it runs on for any other proof, and the HealthWorld box's
-model, are the board's OPEN, the HealthWorld box off until then. This directory is authored in the canonical home at `automation/cicd-reviewer/` and mirrored here by
+edits the issue). **Our one MiniMax key runs the reviewer, on a subscription with a cap, so nothing can spend past it.**
+No box holds it: the one other use is the test business's JobWorld box, during a proof that needs its agent to answer,
+its loop off, the key unset when the proof ends — so a proof is kept to its minutes, since every minute it runs is the
+reviewer's plan too. GHL's reviewers never reach that box: the add-on's review videos are filmed on it during such a proof (`application/jobworld`
+DESIGN §9 THE LAUNCH GATE).
+The HealthWorld box's model is the board's OPEN, the box off until then. This directory is authored in the canonical home at `automation/cicd-reviewer/` and mirrored here by
 `scalable-publishing` on every push to the default branch that touches it — never edited here.
 
 ## 11. Laws
 
-- Only the merge queue merges; nothing merges without a verdict on the exact tip — CLEAN, or UNREVIEWED with every
-  check of the repository's own workflows passed — and a verdict counts only while fresh.
+- Only the merge queue merges — or, while GitHub Actions starts no job, the session doing its steps by hand (§5);
+  nothing merges without a verdict on the exact tip — CLEAN, or UNREVIEWED with every check of the repository's own
+  workflows passed — and a verdict counts only while fresh.
+- Merges never wait on Actions: while it starts no job, every pull request the session merges is `review-owed`.
 - Merges never wait on the model: a PR merged UNREVIEWED is reviewed after it merges, and a defect found then opens a fix.
-- The reviewer's MiniMax plan is the reviewer's alone.
+- Our one MiniMax key, on a capped subscription, runs the reviewer; no box holds it but the test business's during a proof, its loop off, unset after.
 - Nothing fires on a draft or on the standing branch.
+- A GitHub Pages source branch is the live site: never merged, never deleted.
 - The model never does what git's API can do.
 - No fork-reachable trigger on any workflow here: this public repo holds a token that reads the private canonical home.
 - Never a force push, anywhere.
@@ -191,9 +228,12 @@ model, are the board's OPEN, the HealthWorld box off until then. This directory 
 | the freshness check read `gh api --jq '.[].sha'` through the JSON-per-line reader; `--jq` prints a string raw, so the first sha after any commit on main crashed the run — nine queue runs failed in a row and nothing merged for hours while every verdict was CLEAN | `gh_strings` reads `--jq` string output raw; the tests' fake GitHub answers those calls raw, as gh does, so the crash fails a test |
 | sessions waited on hand-written loops: one baselined CONFLICTING and looped four hours (#1561), one started after its merge and ran all night (#1599), one had to be patched to keep going past CLEAN (#1566) — each a deploy or a fix hours late | the PR watch (`pr_watch.py`): checks before it waits, exits on every state the session must act on, never past its cap; a test per failure |
 | every push to a PR re-reviewed half-finished work | reviews only for ready PRs; drafts fire nothing |
-| a test JobWorld box's heartbeat, left on, spent the whole MiniMax plan the reviewer runs on, and no pull request from any session could merge for days | the plan is the reviewer's alone (§10); the model's check marks a tip UNREVIEWED and the queue merges it on its own workflows' checks, the review after the merge (§2) |
+| a test JobWorld box's heartbeat, left on, spent the whole MiniMax plan the reviewer runs on, and no pull request from any session could merge for days | no box holds the key between proofs, and a proof runs with the box's loop off (§10); the model's check marks a tip UNREVIEWED and the queue merges it on its own workflows' checks, the review after the merge (§2) |
 | the first queue built to merge UNREVIEWED pull requests counted every check, and Cloudflare's preview build of the business site fails on every pull request in the canonical home, so it would have merged none | the queue counts only the checks the repository's own workflows run (§5); a test pins Cloudflare's own shape, and fails with the guard removed |
 | an AI opening PRs on branch creation raced the sessions' own | removed; sessions open their own, the sweep catches the rest |
+| GitHub Actions started no job — the account's billing refused — so the trigger, the reviewer, the queue and the sweep all stopped, and 23 ready pull requests across 12 repositories waited with no verdict | the queue by hand (§5): while jobs do not start the session is the CI, and everything it merges is `review-owed` |
+| working the queue by hand, the session read `cyberneticircus` #4's diff but not the review already on its tip — the reviewer's BLOCKING, a stored XSS (a page title breaking out of a `data-title` attribute) — and merged it CLEAN; the hand verdicts also went out as issue comments, which the sweep and the queue never read | the queue by hand reads every review on the tip first and answers a standing BLOCKING in writing before judging; its verdict is a review comment (§5); the XSS fix is `cyberneticircus` #5 |
+| the sweep opened a pull request from `director-cinematic-site`'s `gh-pages`, the branch its GitHub Pages site is built from, and every way of merging it hurt the site: the queue's squash deletes the branch, a merge commit puts its tip on the default branch where the sweep deletes it, and a squash alone leaves it ahead, reopened daily | the sweep and the queue read each repository's Pages source (`pages_branch`) and keep it as they keep the standing branch; a repository whose site cannot be read is skipped; a test of each fails with the guard removed |
 
 ## 13. Built, and owed
 
@@ -211,9 +251,9 @@ canonical home's check is the trigger's dispatch, green whatever the review then
 Edit here, in the canonical home, never in the public repo. A change opens a ready PR like any other — the reviewer
 reviews its own code and the queue merges it — except a change to the merge path itself, which cannot review itself
 before it is published: merge it after a CLEAN verdict by hand, then prove the published version live. **While the model
-is down, the owner's word covers every merge until it answers:** the session that holds the CI merges a merge-path change
-by hand without a verdict, lands every pull request the outage holds up (resolving their conflicts too) and never asks
-per pull request. Prove such a change against real pull requests' data and under the runner's own shell (`bash -e`)
+is down, or GitHub Actions starts no job, the owner's word covers every merge until it returns:** the session that holds
+the CI merges a merge-path change by hand, lands every pull request the stop holds up by §5's queue by hand (resolving
+their conflicts too) and never raises a merge, a held pull request or the stop itself with the owner. Prove such a change against real pull requests' data and under the runner's own shell (`bash -e`)
 before it merges, so that one merge carries the whole fix. Run before every push: `python3 tests/test_merge_queue.py` · `python3 tests/test_sweep.py` · `python3 tests/test_ci_agent.py` ·
 `python3 tests/test_pr_watch.py` · `python3 tests/test_outage.py`, all green;
 a guard added gets a test that fails with the guard removed. After a publish, prove the changed path live on a real PR.

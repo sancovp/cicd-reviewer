@@ -15,8 +15,9 @@ A question only *USER* can answer moves: **RAISED** (named) → **PUT** (put to 
 | who marks the rule harvest's draft pull requests ready — the reviewer must not approve a rule it wrote | [§9](../../DESIGN.md) | ● | | | |
 | how fast other repos' pull requests should merge — daily through the sweep, or the review trigger installed in each active repo | [§8](../../DESIGN.md) | ● | | | |
 | OM Daily Driver (#1476, parked as a draft) — keep, change or drop | [§8](../../DESIGN.md) | ● | ● | | |
-| merges never wait on the model — ruled: when the reviewer's model is down, the queue merges on the automatic checks and the review runs after the merge; the reviewer's MiniMax plan is the reviewer's alone; until it answers, the session holding the CI lands every merge | [§2](../../DESIGN.md) · [§10](../../DESIGN.md) · [§14](../../DESIGN.md) | ● | ● | ● | ● |
-| which model the HealthWorld box runs on (off until then), and the test business's JobWorld box for a proof other than GHL's review of the add-on | [§10](../../DESIGN.md) | ● | ● | | |
+| merges never wait on the model — ruled: when the reviewer's model is down, the queue merges on the automatic checks and the review runs after the merge; our one MiniMax key (a capped subscription) runs it and a test-box proof alone; until it answers, the session holding the CI lands every merge | [§2](../../DESIGN.md) · [§10](../../DESIGN.md) · [§14](../../DESIGN.md) | ● | ● | ● | ● |
+| merges never wait on Actions — ruled: while GitHub Actions starts no job (the account's billing), the session handles every pull request by the queue's steps by hand, each merge `review-owed` | [§1](../../DESIGN.md) · [§5](../../DESIGN.md) · [§14](../../DESIGN.md) | ● | ● | ● | ● |
+| which model the HealthWorld box runs on (off until then); the test business's box for a proof — ruled: our one MiniMax key (a capped subscription), for that proof alone, loop off, unset after (JobWorld §9) | [§10](../../DESIGN.md) | ● | ● | | |
 
 ## THE FLOW
 
@@ -39,5 +40,7 @@ real pull request) → **LIVE** (what every pull request goes through). `●` = 
 | the rule harvest moved here, its rule pull requests drafts | [§9](../../DESIGN.md) | ● | | | |
 | a cost meter — reviews and model spend per day | [§13](../../DESIGN.md) | ● | | | |
 | merges never wait on the model — the model's check, the UNREVIEWED mark, the queue merging on its own workflows' checks and labelling `review-owed` | [§2](../../DESIGN.md) · [§5](../../DESIGN.md) | ● | ● | ● | |
+| the queue by hand — while Actions starts no job, a session reads each ready pull request, posts its verdict and merges a clean, fresh one `review-owed` | [§5](../../DESIGN.md) | ● | ● | ● | |
+| the Pages source guard — the sweep and the queue keep the branch a repository's GitHub Pages site is built from, as they keep the standing branch | [§6](../../DESIGN.md) · [§8](../../DESIGN.md) | ● | ● | | |
 | the late review — a merged `review-owed` pull request reviewed once the model answers; BLOCKING opens a fix issue | [§4](../../DESIGN.md) · [§6](../../DESIGN.md) | ● | ● | | |
 | a failed review shown failed on the pull request — today the canonical home's check is the dispatch, green whatever the review does | [§13](../../DESIGN.md) | ● | | | |

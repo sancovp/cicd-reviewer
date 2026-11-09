@@ -2,8 +2,9 @@ name: Sweep — no branch left unmerged
 
 # ─────────────────────────────────────────────────────────────────────────────────────────
 # Work is done only when it is on the default branch. Once a day, over every repository the owner has (its own
-# sources, not forks, not archived), every branch that is not the default and not the one standing branch
-# (`om-is-the-base`) is moved toward the default branch: deleted when its tip is already there; merged when its
+# sources, not forks, not archived), every branch that is not the default, not the one standing branch
+# (`om-is-the-base`) and not the branch the repository's GitHub Pages site is built from is moved toward the default
+# branch: deleted when its tip is already there; merged when its
 # pull request's verdict is CLEAN; reviewed when it has no verdict; given a pull request when it has none. What it
 # cannot move is written to ONE tracking issue on the canonical home, `UNMERGED WORK`. Deterministic: git's API
 # only (sweep.py); the model runs only in the reviews it dispatches, at most `max_reviews` a run.

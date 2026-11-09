@@ -2,7 +2,8 @@
 
 What this dir is FOR: the CI that gets work from a branch onto its default branch — the reviewer (an AI that reviews
 one pull request and ends with a verdict), the coordinator (an AI above the reviews, called when ready pull requests
-overlap), the merge queue (`merge_queue.py`, the only thing that merges), the PR watch (`pr_watch.py`, how a session waits on
+overlap), the merge queue (`merge_queue.py`, the only thing that merges — except while GitHub Actions starts no job, when
+a session runs its steps by hand: DESIGN §5 THE QUEUE BY HAND), the PR watch (`pr_watch.py`, how a session waits on
 its pull request), the outage path (`outage.py`: when the model does not answer, a pull request is marked UNREVIEWED,
 merges on its own workflows' checks and is reviewed after), and the daily sweep (`sweep.py`) over every
 repository. `cicd_aios/` is the reviewer agent's own AIOS (its identity, rules and skills, baked into its image);

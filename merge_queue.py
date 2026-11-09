@@ -19,7 +19,9 @@ deterministically, with the model called in exactly one place — when ready pul
   4. A CONFLICTING pull request gets one comment saying so (the session resolves it); a held one gets one comment
      with the coordinator's reason, and is skipped until its tip changes.
 
-Every merge is a squash at the exact reviewed tip (`--match-head-commit`), the branch deleted. Never a force push.
+Every merge is a squash at the exact reviewed tip (`--match-head-commit`), the branch deleted. Never a force push. A
+pull request from the standing branch or from the branch the repository's GitHub Pages site is built from is never
+queued: deleting that branch takes the site down.
 
   python3 merge_queue.py --repo owner/name [--dry-run]
 """
@@ -35,7 +37,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Set
 
 from sweep import (REVIEW_OWED, STANDING, VERDICT_BLOCKING, VERDICT_CLEAN, VERDICT_UNREVIEWED, _space_out, gh, gh_json,
-                   gh_lines, gh_strings, verdict_of)
+                   gh_lines, gh_strings, pages_branch, verdict_of)
 
 HELD = "held by the merge coordinator at"
 CONFLICT = "conflicts with"
@@ -238,8 +240,11 @@ def run(repo: str, dry: bool = False, log: Callable[[str], None] = print,
     base = gh_json(["repo", "view", repo, "--json", "defaultBranchRef"])["defaultBranchRef"]["name"]
     report: Dict[str, list] = {"merged": [], "rereview": [], "held": [], "conflict": [], "waiting": [], "owed": []}
     ready: List[PR] = []
+    pages = pages_branch(repo)                 # unreadable ⇒ raises, and nothing merges this run
     for p in open_prs(repo, base):
-        if p.branch in STANDING:               # the standing branch is never queued, commented on or merged
+        # the standing branch and the Pages source (the live site — a merge deletes its branch) are never queued,
+        # commented on or merged
+        if p.branch in STANDING or p.branch == pages:
             continue
         if p.mergeable == "CONFLICTING":
             marker = f"{CONFLICT} `{base}` at {p.head[:12]}"

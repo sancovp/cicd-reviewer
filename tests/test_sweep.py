@@ -23,6 +23,43 @@ def t_standing_and_default_are_never_touched():
     assert decide(facts(branch=Branch("main", "x"))).action == "keep"
 
 
+def t_the_pages_source_branch_is_never_deleted_or_merged():
+    """the branch a GitHub Pages site is built from IS the live site: deleting it, or merging it with the branch
+    deleted, takes the site down — even when its tip is already on the default branch"""
+    pages = dict(branch=Branch("gh-pages", "x"), pages_branch="gh-pages")
+    assert decide(facts(in_default=True, **pages)).action == "keep"
+    ready = {"number": 1, "mergeable": "MERGEABLE", "head_sha": "x"}
+    assert decide(facts(open_pr=ready, verdict=sweep.VERDICT_CLEAN, **pages)).action == "keep"
+    assert decide(facts(branch=Branch("gh-pages", "x"), in_default=True)).action == "delete"   # no site: an ordinary branch
+
+
+def t_pages_branch_reads_the_source_only_where_a_site_exists():
+    asked = []
+
+    def answer(has_pages, pages):
+        def gh(args, input_text=None):
+            asked.append(args[1])
+            if args[1].endswith("/pages"):
+                if isinstance(pages, Exception):
+                    raise pages
+                return pages
+            return has_pages
+        return gh
+    sweep.gh = answer("true\n", "gh-pages\n")
+    assert sweep.pages_branch("o/r") == "gh-pages"
+    asked.clear()
+    sweep.gh = answer("false\n", RuntimeError("gh api repos/o/r/pages…: Forbidden (HTTP 403)"))
+    assert sweep.pages_branch("o/r") is None and asked == ["repos/o/r"]   # no site: the site is never asked for
+    sweep.gh = answer("true\n", RuntimeError("gh api repos/o/r/pages…: Not Found (HTTP 404)"))
+    assert sweep.pages_branch("o/r") is None
+    sweep.gh = answer("true\n", RuntimeError("gh api repos/o/r/pages…: Forbidden (HTTP 403)"))
+    try:
+        sweep.pages_branch("o/r")
+        raise AssertionError("a site that cannot be read must raise, so the sweep skips the repository instead of guessing")
+    except RuntimeError:
+        pass
+
+
 def t_a_tip_already_on_the_default_branch_is_deleted():
     assert decide(facts(in_default=True)).action == "delete"
 

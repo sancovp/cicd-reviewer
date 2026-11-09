@@ -2,8 +2,9 @@
 """THE SWEEP — no branch is left unmerged. Deterministic: git's API only, never a model.
 
 Runs on a schedule in the reviewer's own (public, free-minutes) repo, over every repository the owner has (its own
-sources, not forks, not archived). For every branch that is not the default branch and not a STANDING branch
-(`om-is-the-base`, the one branch kept beside the default):
+sources, not forks, not archived). For every branch that is not the default branch, not a STANDING branch
+(`om-is-the-base`, the one branch kept beside the default) and not the branch the repository's GitHub Pages site is
+built from (the live site: deleting it, or merging it with the branch deleted, takes the site down):
 
   - its tip is already in the default branch, or a MERGED pull request has exactly that tip ⇒ the work is on the
     default branch: the branch is deleted.
@@ -16,8 +17,9 @@ merged, so the AI reads it once it answers; a defect it finds opens a "Fix owed"
   - it has no open pull request ⇒ one is opened (title: the branch, body: its commits) and a review dispatched.
 
 What it cannot move is listed in ONE tracking issue on the canonical home (`UNMERGED WORK`), rewritten every run.
-It never force-pushes, never touches a default or standing branch, deletes only a branch whose exact tip is on the
-default branch, and dispatches at most `--max-reviews` reviews a run (each costs a model run).
+It never force-pushes, never touches a default, standing or Pages source branch, skips a repository whose Pages site
+it cannot read, deletes only a branch whose exact tip is on the default branch, and dispatches at most `--max-reviews`
+reviews a run (each costs a model run).
 
   python3 sweep.py --owner sancovp [--repo owner/name ...] [--dry-run] [--max-reviews 20]
 """
@@ -113,12 +115,16 @@ class Facts:
     open_pr: Optional[dict] = None         # {number, mergeable, head_sha, draft}
     verdict: Optional[str] = None          # the last verdict on the open PR's tip
     publish_source: Optional[str] = None   # this repo is a PUBLISH TARGET of that subdir of the canonical home
+    pages_branch: Optional[str] = None     # the branch this repo's GitHub Pages site is built from
 
 
 def decide(f: Facts) -> Plan:
     b = f.branch
     if b.name == f.default or b.name in STANDING:
         return Plan(f.repo, b.name, "keep", "the default or a standing branch")
+    if f.pages_branch and b.name == f.pages_branch:
+        return Plan(f.repo, b.name, "keep", "the branch its GitHub Pages site is built from — the live site, never "
+                    "merged or deleted")
     if f.in_default:
         return Plan(f.repo, b.name, "delete", "its tip is already on the default branch")
     if b.sha in f.merged_pr_tips:
@@ -156,6 +162,22 @@ def branches_of(repo: str) -> List[Branch]:
     return [Branch(r["name"], r["sha"]) for r in rows]
 
 
+def pages_branch(repo: str) -> Optional[str]:
+    """The branch the repository's GitHub Pages site is built from, or None when it has no site. The site itself is
+    asked for only when the repository's own metadata says it has one (`has_pages`), so a token that cannot read Pages
+    can pause only the repositories that have a site; for those, any failure but a 404 raises — skipped, never swept
+    blind."""
+    if gh(["api", f"repos/{repo}", "--jq", ".has_pages"]).strip() != "true":
+        return None
+    try:
+        out = gh(["api", f"repos/{repo}/pages", "--jq", ".source.branch // empty"])
+    except RuntimeError as e:
+        if "HTTP 404" in str(e):
+            return None
+        raise
+    return out.strip() or None
+
+
 def publish_targets() -> Dict[str, str]:
     """public repo → its source subdir in the canonical home, from the publishing manifest (a merge into a target is
     overwritten by the next publish, so a target's unmerged work belongs in the canonical home instead)."""
@@ -185,7 +207,8 @@ def ahead_by(repo: str, default: str, branch: str) -> int:
     return int(cmp["compare"]["aheadBy"])
 
 
-def gather(repo: str, default: str, b: Branch, publish_source: Optional[str] = None) -> Facts:
+def gather(repo: str, default: str, b: Branch, publish_source: Optional[str] = None,
+           pages: Optional[str] = None) -> Facts:
     in_default = ahead_by(repo, default, b.name) == 0
     prs = gh_json(["pr", "list", "--repo", repo, "--head", b.name, "--state", "all", "--limit", "50",
                    "--json", "number,state,headRefOid,mergeable,isDraft"]) or []
@@ -198,7 +221,7 @@ def gather(repo: str, default: str, b: Branch, publish_source: Optional[str] = N
         reviews = gh_lines(["api", f"repos/{repo}/pulls/{open_pr['number']}/reviews", "--paginate", "--jq",
                             ".[] | {commit_id, submitted_at, body}"])
         verdict = last_verdict(reviews, open_pr["head_sha"])
-    return Facts(repo, default, b, in_default, merged_tips, open_pr, verdict, publish_source)
+    return Facts(repo, default, b, in_default, merged_tips, open_pr, verdict, publish_source, pages)
 
 
 # ── acting ──────────────────────────────────────────────────────────────────────────────────────
@@ -324,14 +347,15 @@ def main(argv: Optional[List[str]] = None) -> int:
             continue
         try:
             branches = branches_of(repo)
+            pages = pages_branch(repo)
         except RuntimeError as e:
-            log(f"⚠ {repo}: branches unreadable — {e}")
+            log(f"⚠ {repo}: branches or Pages site unreadable — {e}")
             continue
         for b in branches:
-            if b.name == default or b.name in STANDING:
+            if b.name == default or b.name in STANDING or b.name == pages:
                 continue
             try:
-                p = decide(gather(repo, default, b, targets.get(repo)))
+                p = decide(gather(repo, default, b, targets.get(repo), pages))
             except RuntimeError as e:
                 p = Plan(repo, b.name, "keep", f"could not be read this run, tried again next run: {str(e)[:120]}")
             if p.action in ("open", "review"):

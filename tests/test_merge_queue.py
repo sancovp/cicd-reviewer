@@ -81,8 +81,9 @@ def t_reviews_are_dispatched_one_spacing_apart():
 
 # ── run() against a fake GitHub ───────────────────────────────────────────────────────────────
 
-def fake_github(prs, changed_files_by_sha=None, commits_since=None):
-    """prs: list of dicts as `gh pr list --json` returns them plus 'reviews' and 'comments'."""
+def fake_github(prs, changed_files_by_sha=None, commits_since=None, pages=None):
+    """prs: list of dicts as `gh pr list --json` returns them plus 'reviews' and 'comments'. pages: the branch the
+    repository's GitHub Pages site is built from; None answers 404, as GitHub does for a repository with no site."""
     calls = []
 
     def gh(args, input_text=None):
@@ -90,6 +91,12 @@ def fake_github(prs, changed_files_by_sha=None, commits_since=None):
         a = " ".join(args)
         if a.startswith("repo view"):
             return json.dumps({"defaultBranchRef": {"name": "main"}})
+        if a == "api repos/o/r --jq .has_pages":
+            return "false\n" if pages is None else "true\n"
+        if a.startswith("api repos/o/r/pages"):
+            if pages is None:
+                raise RuntimeError("gh api repos/o/r/pages…: Not Found (HTTP 404)")
+            return pages + "\n"
         if a.startswith("pr list"):
             return json.dumps([{k: v for k, v in p.items() if k not in ("reviews", "comments")} for p in prs])
         for p in prs:
@@ -241,6 +248,16 @@ def t_the_standing_branch_is_never_touched():
     p["headRefName"] = "om-is-the-base"
     rep, merges, disp, comments = _run([p])
     assert comments == [] and merges == [] and 9 not in sum(rep.values(), [])
+
+
+def t_the_pages_source_branch_is_never_queued_or_merged():
+    """the queue merges with the branch deleted: a pull request from the Pages source would take the site down"""
+    p = ghpr(7, {"index.html"})
+    p["headRefName"] = "gh-pages"
+    rep, merges, disp, comments = _run([p], pages="gh-pages")
+    assert merges == [] and comments == [] and 7 not in sum(rep.values(), []), rep
+    rep, merges, disp, comments = _run([ghpr(7, {"index.html"})], pages="gh-pages")   # another branch still merges
+    assert rep["merged"] == [7], rep
 
 
 def t_a_draft_is_never_queued():
