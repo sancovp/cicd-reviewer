@@ -90,18 +90,42 @@ def close_late(repo: str, pr: str, since: str, log: Callable[[str], None] = prin
     comments = gh_lines(["api", f"repos/{repo}/issues/{pr}/comments", "--paginate", "--jq", ".[] | {created_at, body}"])
     v = late_verdict(comments, since)
     if v is None:
+        if not label_on(repo, pr):
+            log(f"#{pr}: no late verdict, and {REVIEW_OWED} is already off — an earlier late review landed; nothing to do")
+            return 0
         log(f"#{pr}: the late review posted no verdict — the label stays and the next sweep sends it again")
         return 1
+    # Taking the label off IS the claim. The sweep finds owed reviews by a search, which can still list a pull request
+    # after its label came off, so two late reviews of one pull request can overlap; GitHub removes a label once and
+    # answers the second removal 404, so only the run that took it acts.
+    try:
+        gh(["api", "-X", "DELETE", f"repos/{repo}/issues/{pr}/labels/{REVIEW_OWED}"])
+    except RuntimeError as e:
+        if "HTTP 404" not in str(e):
+            raise
+        log(f"#{pr}: {REVIEW_OWED} is already off — an earlier late review landed; nothing opened, nothing changed")
+        return 0
     if v == VERDICT_BLOCKING:
         info = gh_json(["pr", "view", str(pr), "--repo", repo, "--json", "title,url"]) or {}
-        gh(["issue", "create", "--repo", repo, "--title", f"Fix owed: #{pr} {info.get('title', '')}".strip(), "--body",
-            f"#{pr} merged while the reviewer's model was down. Its review, run after it merged, found a defect: "
-            f"{info.get('url', '')}. The session working in this repository fixes it on a new branch and hands it off "
-            "as a ready pull request."])
+        try:
+            gh(["issue", "create", "--repo", repo, "--title", f"Fix owed: #{pr} {info.get('title', '')}".strip(), "--body",
+                f"#{pr} merged while the reviewer's model was down. Its review, run after it merged, found a defect: "
+                f"{info.get('url', '')}. The session working in this repository fixes it on a new branch and hands it off "
+                "as a ready pull request."])
+        except RuntimeError:
+            gh(["pr", "edit", str(pr), "--repo", repo, "--add-label", REVIEW_OWED])   # the next sweep sends it again
+            raise
         log(f"#{pr}: BLOCKING after the merge — a Fix owed issue is open")
-    gh(["pr", "edit", str(pr), "--repo", repo, "--remove-label", REVIEW_OWED])
     log(f"#{pr}: late review {v}; {REVIEW_OWED} removed")
     return 0
+
+
+def label_on(repo: str, pr: str) -> bool:
+    """Whether the pull request still carries `review-owed`, read by number; a reply with no label list counts as on,
+    so an unreadable answer never lets an owed review be dropped."""
+    info = gh_json(["pr", "view", str(pr), "--repo", repo, "--json", "labels"]) or {}
+    labels = info.get("labels")
+    return labels is None or REVIEW_OWED in {lb.get("name") for lb in labels}
 
 
 def main(argv: Optional[List[str]] = None) -> int:

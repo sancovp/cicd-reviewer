@@ -44,4 +44,5 @@ real pull request) → **LIVE** (what every pull request goes through). `●` = 
 | the queue by hand — while Actions starts no job, a session reads each ready pull request, posts its verdict and merges a clean, fresh one `review-owed` | [§5](../../DESIGN.md) | ● | ● | ● | |
 | the Pages source guard — the sweep and the queue keep the branch a repository's GitHub Pages site is built from, as they keep the standing branch | [§6](../../DESIGN.md) · [§8](../../DESIGN.md) | ● | ● | | |
 | the late review — a merged `review-owed` pull request reviewed once the model answers; BLOCKING opens a fix issue | [§4](../../DESIGN.md) · [§6](../../DESIGN.md) | ● | ● | | |
+| one tracking issue and one fix issue however close together runs fall — the oldest open `UNMERGED WORK` kept, any other closed; a late review acting only when its removal of `review-owed` is the one GitHub accepts | [§6](../../DESIGN.md) · [§7](../../DESIGN.md) · [§12](../../DESIGN.md) | ● | ● | | |
 | a failed review shown failed on the pull request — today the canonical home's check is the dispatch, green whatever the review does | [§13](../../DESIGN.md) | ● | | | |

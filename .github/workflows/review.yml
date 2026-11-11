@@ -237,7 +237,8 @@ jobs:
       # requests that overlap go through the coordinator first. always(): the verdict on GitHub decides, never how the
       # agent worded its last message.
       # THE LATE REVIEW'S RESULT — a BLOCKING verdict on a merged pull request opens a "Fix owed" issue; the review-owed
-      # label comes off once a verdict landed (none landed ⇒ it stays, and the next sweep sends it again).
+      # label comes off once a verdict landed (none landed ⇒ it stays, and the next sweep sends it again). Taking it off
+      # is the claim: of two late reviews of one pull request, only the one whose removal GitHub accepts acts.
       - name: Close the late review
         if: always() && steps.live.outputs.late == 'true' && steps.model.outputs.state == 'up'
         env:

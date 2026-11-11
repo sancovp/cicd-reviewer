@@ -16,7 +16,8 @@ Every pull request merged while the reviewer's model was down (labelled `review-
 merged, so the AI reads it once it answers; a defect it finds opens a "Fix owed" issue (outage.py close-late).
   - it has no open pull request ⇒ one is opened (title: the branch, body: its commits) and a review dispatched.
 
-What it cannot move is listed in ONE tracking issue on the canonical home (`UNMERGED WORK`), rewritten every run.
+What it cannot move is listed in ONE tracking issue on the canonical home (`UNMERGED WORK`), rewritten every run; the
+oldest open one is kept and any other closed as its duplicate.
 It never force-pushes, never touches a default, standing or Pages source branch, skips a repository whose Pages site
 it cannot read, deletes only a branch whose exact tip is on the default branch, and dispatches at most `--max-reviews`
 reviews a run (each costs a model run).
@@ -312,17 +313,27 @@ def tracking_body(plans: List[Plan]) -> str:
 
 
 def write_tracking(plans: List[Plan], dry: bool, log: Callable[[str], None]) -> None:
+    """Rewrites the one open tracking issue, or opens it when none is open. GitHub's listings — search, label and REST
+    alike — miss an issue made seconds before, and a run on Actions keeps no state to hold its number, so two sweeps
+    close together could each open one; the workflow's concurrency group never runs two at once, so every run keeps the
+    OLDEST open one and closes every other as its duplicate, and a duplicate a race opened lasts until the next run."""
     body = tracking_body(plans)
     if dry:
         log("\n--- the tracking issue would read ---\n" + body)
         return
     found = gh_json(["issue", "list", "--repo", TRACKING_REPO, "--state", "open", "--search",
                      f"in:title \"{TRACKING_TITLE}\"", "--json", "number,title"]) or []
-    num = next((i["number"] for i in found if i["title"] == TRACKING_TITLE), None)
-    if num:
-        gh(["issue", "edit", str(num), "--repo", TRACKING_REPO, "--body", body])
-    else:
+    nums = sorted(i["number"] for i in found if i["title"] == TRACKING_TITLE)
+    if not nums:
         gh(["issue", "create", "--repo", TRACKING_REPO, "--title", TRACKING_TITLE, "--body", body])
+        return
+    gh(["issue", "edit", str(nums[0]), "--repo", TRACKING_REPO, "--body", body])
+    for n in nums[1:]:
+        gh(["issue", "comment", str(n), "--repo", TRACKING_REPO, "--body",
+            f"A duplicate of #{nums[0]}, the tracking issue the sweep rewrites every run: two sweeps close together each "
+            "opened one, GitHub's listings missing an issue made seconds before."])
+        gh(["issue", "close", str(n), "--repo", TRACKING_REPO])
+        log(f"closed #{n}, a duplicate of the tracking issue #{nums[0]}")
 
 
 def main(argv: Optional[List[str]] = None) -> int:

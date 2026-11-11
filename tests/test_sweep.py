@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Tests for sweep.py's decisions — pure, no network. Run: python3 tests/test_sweep.py"""
 import importlib.util
+import json
 import os
 import sys
 
@@ -147,6 +148,39 @@ def t_tracking_body_lists_only_stuck():
     assert "`a`" in body and "#3" in body and "`b`" not in body
     assert "Nothing stuck" in sweep.tracking_body([sweep.Plan("o/r", "b", "delete", "x")])
     assert "Nothing parked" in sweep.tracking_body([])
+
+
+def _tracking(open_numbers):
+    calls = []
+
+    def gh(args, input_text=None):
+        calls.append(args)
+        if args[:2] == ["issue", "list"]:
+            return json.dumps([{"number": n, "title": sweep.TRACKING_TITLE} for n in open_numbers] +
+                              [{"number": 1, "title": "UNMERGED WORK, a note about it"}])
+        return ""
+    sweep.gh = gh
+    sweep.write_tracking([], False, lambda m: None)
+    return [a for a in calls if a[:2] != ["issue", "list"]]
+
+
+def t_the_tracking_issue_is_opened_once_and_rewritten_after():
+    made = _tracking([])
+    assert [a[:2] for a in made] == [["issue", "create"]], made
+    kept = _tracking([12])
+    assert [a[:3] for a in kept] == [["issue", "edit", "12"]], kept
+
+
+def t_two_tracking_issues_keep_the_oldest_and_close_the_other():
+    """GitHub's listings miss an issue made seconds before (the absorber's proofs; #2495, REST's listing at 7 s), so two
+    sweeps close together can each open one: every run keeps the oldest open one, so both keep the same, and closes the
+    rest as its duplicates"""
+    acts = _tracking([19, 12, 23])
+    assert acts[0][:3] == ["issue", "edit", "12"], acts
+    closed = [a[2] for a in acts if a[:2] == ["issue", "close"]]
+    noted = [a[2] for a in acts if a[:2] == ["issue", "comment"] and any("A duplicate of #12" in x for x in a)]
+    assert sorted(closed) == ["19", "23"] and sorted(noted) == ["19", "23"], acts
+    assert not any(a[:2] == ["issue", "create"] for a in acts)
 
 
 def t_act_never_touches_anything_in_a_dry_run():

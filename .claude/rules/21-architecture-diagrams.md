@@ -25,7 +25,7 @@ flowchart TB
     QUEUE["merge-queue.yml → merge_queue.py — one run per repo at a time: ready (CLEAN, or UNREVIEWED with its checks passed; never from the standing or the Pages source branch) · fresh · grouped by shared files · squash at the reviewed tip · an UNREVIEWED merge labelled review-owed"]:::det
     COORD["the COORDINATOR (MODE=coordinate) — overlapping ready PRs: their order, any holds"]:::ai
     SWEEP["sweep.yml → sweep.py — daily, every source repo, every branch but the default, the standing and the Pages source: delete merged branches · park drafts · open missing PRs · dispatch reviews · hand CLEAN PRs to the queue"]:::det
-    ISSUE["UNMERGED WORK — STUCK · PARKED (an issue on the canonical home)"]:::det
+    ISSUE["UNMERGED WORK — STUCK · PARKED · REVIEW OWED (an issue on the canonical home; every sweep keeps the oldest open one and closes any other as its duplicate)"]:::det
   end
   GH["GitHub · SEAM: PRs, reviews, merges, the GraphQL comparison"]:::dep
   MODEL["MiniMax · SEAM: the model behind both AI tiers"]:::dep

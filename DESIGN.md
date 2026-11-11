@@ -160,14 +160,23 @@ no verdict ⇒ a review dispatched · no PR ⇒ one opened, ready · a CONFLICT 
 the publishing pipeline overwrites, read from `scalable-publishing/publish-manifest.json`) ⇒ STUCK, to be ported into its
 source in the canonical home, never merged there. Then every merged PR labelled `review-owed`, in any repository the
 owner has, is sent to the reviewer, merged (its default branch checked out), within the same review budget: its late
-review runs once the model answers, and the label stays until a verdict lands.
+review runs once the model answers, and the label stays until a verdict lands. Those pull requests are found by a
+search, which can still list one seconds after its label came off, so two late reviews of one pull request can run, one
+after the other or at once (the review workflow has no concurrency group); taking the label off is therefore the claim:
+the late review removes it by number before it acts, GitHub removes a label once and answers a second removal 404, and a
+review whose removal is refused opens nothing and changes nothing. A "Fix owed" issue that then fails to open puts the
+label back, so the next sweep sends the review again (`outage.py close-late`).
 
 ## 7. The tracking issue — `UNMERGED WORK`
 
 One issue on the canonical home, rewritten by every sweep: **STUCK** (work the CI cannot move — conflicts,
 BLOCKING verdicts, publish targets; each with why), **PARKED** (drafts), and **REVIEW OWED** (merged while the model was
-down, their late reviews pending). A late review that finds a defect opens its own "Fix owed" issue in its repository. A session starting work in a repository reads
-that repository's STUCK rows and clears them before anything else.
+down, their late reviews pending). Every sweep keeps the OLDEST open one and closes any other as its duplicate: GitHub's
+listings — search, label and REST alike — miss an issue made seconds before (the REST listing missed one for seven
+seconds, #2495), a run on Actions keeps no state to hold the issue's number, and the workflow's concurrency group never
+runs two sweeps at once, so every run keeps the same one, and a second opened by two sweeps close together lasts until
+the next run. A late review that finds a defect opens its own "Fix owed" issue in its repository. A session starting
+work in a repository reads that repository's STUCK rows and clears them before anything else.
 
 ## 8. Repositories and their policy
 
@@ -240,6 +249,7 @@ The HealthWorld box's model is the board's OPEN, the box off until then. This di
 | an AI opening PRs on branch creation raced the sessions' own | removed; sessions open their own, the sweep catches the rest |
 | GitHub Actions started no job — the account's billing refused — so the trigger, the reviewer, the queue and the sweep all stopped, and 23 ready pull requests across 12 repositories waited with no verdict | the queue by hand (§5): while jobs do not start the session is the CI, and everything it merges is `review-owed` |
 | working the queue by hand, the session read `cyberneticircus` #4's diff but not the review already on its tip — the reviewer's BLOCKING, a stored XSS (a page title breaking out of a `data-title` attribute) — and merged it CLEAN; the hand verdicts also went out as issue comments, which the sweep and the queue never read | the queue by hand reads every review on the tip first and answers a standing BLOCKING in writing before judging; its verdict is a review comment (§5); the XSS fix is `cyberneticircus` #5 |
+| the absorber's notice, found by a listing as the tracking issue is, opened two issues for one failure (#2488, #2489): GitHub's listings — search, label and REST alike — miss an issue made seconds before, so two sweeps close together could each open an `UNMERGED WORK`, and a late review sent by a search that still listed its pull request could open a second "Fix owed" | every sweep keeps the oldest open tracking issue and closes the rest as its duplicates (§7); the late review takes the `review-owed` label off as its claim, and only the review whose removal GitHub accepts acts (§6); a test of each fails with its guard removed, the late review's with two reviews that both read the label before either took it |
 | the sweep opened a pull request from `director-cinematic-site`'s `gh-pages`, the branch its GitHub Pages site is built from, and every way of merging it hurt the site: the queue's squash deletes the branch, a merge commit puts its tip on the default branch where the sweep deletes it, and a squash alone leaves it ahead, reopened daily | the sweep and the queue read each repository's Pages source (`pages_branch`) and keep it as they keep the standing branch; a repository whose site cannot be read is skipped; a test of each fails with the guard removed |
 
 ## 13. Built, and owed
