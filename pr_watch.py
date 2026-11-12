@@ -12,6 +12,9 @@ always exits:
   REVIEW-FAILED  the review trigger failed at the exact tip — no run there succeeded or is still running, the last
              one failed — and no verdict is on the tip: no review is coming — re-run it when GitHub failed to start it;
              jobs refused for the account's billing make the session the CI (DESIGN §5 THE QUEUE BY HAND)
+  REVIEW-STALLED the review trigger's run at the exact tip has sat queued STALL_AFTER_MIN minutes with no job started,
+             and no verdict is on the tip: GitHub stalls a run this way and will not cancel it, so no review is coming
+             from it — start a fresh run (the pull request marked draft, then ready)
   COMMENT    a new comment (the queue's conflict or hold notice, a person): read it — a deploy preview's status
              comment is not one: it is posted on every pull request and never asks the session for anything
   PUSHED     the tip moved under the watch: someone else pushed
@@ -44,8 +47,12 @@ REVIEW_TRIGGER = "CICD Review on PR"
 # a trigger run that ended these ways dispatched no review. `cancelled` is not one: the trigger's concurrency group
 # cancels a run that a newer one superseded, and that says nothing about whether a review is coming
 REVIEW_FAILED = {"failure", "startup_failure", "timed_out", "action_required"}
+# a trigger run starts its job within a minute or two; one still queued this long with no verdict on the tip has stalled
+# (#2497's two runs sat queued four hours, and GitHub answered a cancel of either that it was completed)
+STALL_AFTER_MIN = 20
 
-EXIT = {"MERGED": 0, "CLOSED": 0, "CONFLICT": 2, "BLOCKING": 2, "REVIEW-FAILED": 2, "COMMENT": 2, "PUSHED": 2,
+EXIT = {"MERGED": 0, "CLOSED": 0, "CONFLICT": 2, "BLOCKING": 2, "REVIEW-FAILED": 2, "REVIEW-STALLED": 2,
+        "COMMENT": 2, "PUSHED": 2,
         "TIMEOUT": 3, "HEAD-MISMATCH": 4, "GH-DOWN": 5}
 
 
@@ -58,6 +65,7 @@ class Snap:
     comments: int
     review_failed: Optional[str] = None   # how the trigger's deciding run at the tip failed, else None
     review_run_id: Optional[int] = None
+    review_stalled: Optional[int] = None  # the minutes the deciding run has sat queued, once that is STALL_AFTER_MIN
 
 
 def snap_of(pr: dict) -> Snap:
@@ -74,13 +82,17 @@ def snap_of(pr: dict) -> Snap:
     failed = None
     if run.get("status") == "completed" and run.get("conclusion") in REVIEW_FAILED:
         failed = run.get("conclusion")
+    queued = run.get("queued_min") if run.get("status") == "queued" else None
+    stalled = queued if queued is not None and queued >= STALL_AFTER_MIN else None
     return Snap(pr.get("state") or "", pr.get("mergeable") or "UNKNOWN", head, verdict, len(comments), failed,
-                run.get("id") if failed else None)
+                run.get("id") if failed or stalled is not None else None, stalled)
 
 
-def review_run(repo: Optional[str], head: str, api: Callable[[List[str]], dict] = gh_json) -> Optional[dict]:
+def review_run(repo: Optional[str], head: str, api: Callable[[List[str]], dict] = gh_json,
+               clock: Callable[[], float] = time.time) -> Optional[dict]:
     """The review trigger's run that decides whether a review is coming at this exact commit — one still queued or
-    running, else one that succeeded, else the latest — as its id, status and conclusion; None when it has none."""
+    running, else one that succeeded, else the latest — as its id, status and conclusion, and for a queued one the
+    whole minutes it has waited (`queued_min`); None when it has none."""
     if not head:
         return None
     path = f"repos/{repo or '{owner}/{repo}'}/actions/runs?head_sha={head}&event=pull_request&per_page=50"
@@ -90,7 +102,12 @@ def review_run(repo: Optional[str], head: str, api: Callable[[List[str]], dict] 
     running = [r for r in runs if r.get("status") != "completed"]
     succeeded = [r for r in runs if r.get("conclusion") == "success"]
     r = max(running or succeeded or runs, key=lambda r: r.get("created_at") or "")
-    return {"id": r.get("id"), "status": r.get("status"), "conclusion": r.get("conclusion")}
+    out = {"id": r.get("id"), "status": r.get("status"), "conclusion": r.get("conclusion")}
+    if r.get("status") == "queued" and r.get("created_at"):
+        from datetime import datetime
+        made = datetime.fromisoformat(r["created_at"].replace("Z", "+00:00")).timestamp()
+        out["queued_min"] = max(0, int((clock() - made) // 60))
+    return out
 
 
 def needs_action(s: Snap) -> Optional[str]:
@@ -105,6 +122,8 @@ def needs_action(s: Snap) -> Optional[str]:
         return "BLOCKING"
     if s.verdict is None and s.review_failed:
         return "REVIEW-FAILED"
+    if s.verdict is None and s.review_stalled is not None:
+        return "REVIEW-STALLED"
     return None
 
 
@@ -130,6 +149,10 @@ def line(event: str, n: int, s: Snap, expect: Optional[str]) -> str:
           "REVIEW-FAILED": f"the review trigger's run at the tip ended {s.review_failed}, so no review is coming — "
                            f"read it ({run_view}): GitHub failed to start it ⇒ {rerun}, then watch again · its jobs "
                            f"refused for the account's billing ⇒ you are the CI (DESIGN §5 THE QUEUE BY HAND)",
+          "REVIEW-STALLED": f"the review trigger's run at the tip has sat queued {s.review_stalled} min with no job "
+                            f"started ({run_view}) — GitHub stalls a run this way and will not cancel it, so no review "
+                            f"is coming from it: start a fresh one (`gh pr ready {n} --undo`, then `gh pr ready {n}`), "
+                            f"then watch again",
           "COMMENT": "read the new comment",
           "PUSHED": "the tip moved under you — pull it before pushing",
           "TIMEOUT": "still open — check where it stands; watch again only if something is moving",

@@ -159,6 +159,34 @@ def t_review_run_decides_by_every_run_at_the_tip():
     assert pw.review_run("o/r", "", api) is None and len(calls) == 2
 
 
+def t_a_review_run_stalled_in_the_queue_exits_naming_the_re_trigger():
+    # #2497: two trigger runs sat queued four hours with no job and could not be cancelled; the watch waited to its cap
+    w = World(pr(run=run(status="queued", conclusion=None, id=81) | {"queued_min": pw.STALL_AFTER_MIN}))
+    assert w.run() == 2 and w.i == 1 and "REVIEW-STALLED" in w.lines[-1]
+    assert "gh pr ready 7 --undo" in w.lines[-1] and "gh run view 81" in w.lines[-1]
+    # a run queued a short while is still coming, and one that waited long but left a verdict on the tip needs nothing
+    w = World(pr(run=run(status="queued", conclusion=None) | {"queued_min": pw.STALL_AFTER_MIN - 1}), pr(state="MERGED"))
+    assert w.run() == 0 and w.i == 2
+    w = World(pr(run=run(status="queued", conclusion=None) | {"queued_min": 600}, reviews=[("aaaa1111", CLEAN)]),
+              pr(state="MERGED"))
+    assert w.run() == 0
+
+
+def t_review_run_says_how_long_a_queued_run_has_waited():
+    made = "2026-11-11T20:27:14Z"
+    from datetime import datetime
+    t0 = datetime.fromisoformat(made.replace("Z", "+00:00")).timestamp()
+    stalled = lambda args: {"workflow_runs": [
+        {"name": pw.REVIEW_TRIGGER, "id": 1, "status": "queued", "conclusion": None, "created_at": made},
+        {"name": pw.REVIEW_TRIGGER, "id": 0, "status": "queued", "conclusion": None, "created_at": "2026-11-11T20:23:10Z"}]}
+    assert pw.review_run("o/r", "abc", stalled, clock=lambda: t0 + 4 * 3600)["queued_min"] == 240
+    # a fresh run started after them is the one that decides, and it is running
+    fresh = lambda args: {"workflow_runs": stalled(args)["workflow_runs"] + [
+        {"name": pw.REVIEW_TRIGGER, "id": 2, "status": "in_progress", "conclusion": None, "created_at": "2026-11-12T00:29:45Z"}]}
+    r = pw.review_run("o/r", "abc", fresh, clock=lambda: t0 + 4 * 3600)
+    assert r["id"] == 2 and "queued_min" not in r
+
+
 def t_a_failed_run_with_no_id_names_the_commit_not_none():
     w = World(pr(run={"status": "completed", "conclusion": "failure"}))
     assert w.run() == 2 and "None" not in w.lines[-1] and "gh run list --commit aaaa1111" in w.lines[-1]
@@ -174,6 +202,8 @@ def run_all():
             print(f"PASS {t.__name__}")
         except AssertionError as e:
             print(f"FAIL {t.__name__}: {e}")
+        except Exception as e:   # a crash is a failure of the case it happened in, never of the whole suite
+            print(f"FAIL {t.__name__}: {type(e).__name__}: {e}")
     print(f"\n{passed}/{len(tests)} passed")
     return passed == len(tests)
 

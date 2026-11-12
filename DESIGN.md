@@ -57,11 +57,14 @@ verdict is on the tip (REVIEW-FAILED: no run of the trigger at the tip succeeded
 failed, timed out, failed to start or waits for approval — never one cancelled, which is the trigger's concurrency group
 superseding it; no review is coming, so re-run it when GitHub failed to start it, or, when its jobs were refused for the
 account's billing, be the CI by §5); it reads those runs beside the reviews because a failed run posts no verdict, so a
-watch reading the reviews alone waited on it until its cap. It checks before it waits, so a pull request
+watch reading the reviews alone waited on it until its cap. It also exits when the trigger's run at the tip has sat queued twenty minutes with no job
+started and no verdict is on the tip (REVIEW-STALLED): GitHub stalls a run in the trigger's concurrency group this way
+and answers a cancel that it is completed, so no review comes from it; marking the pull request draft, then ready, starts
+a fresh run. It checks before it waits, so a pull request
 already in one of those states exits at once. A CLEAN verdict and a
 mergeable state of UNKNOWN are not actions (the queue moves a CLEAN pull request; UNKNOWN is GitHub computing). It
 never runs past `--max-hours` (default 4): it exits TIMEOUT saying where the pull request stands. Exit codes: 0 done ·
-2 act · 3 timeout · 4 merged at another tip · 5 gh down.
+2 act (REVIEW-STALLED among them) · 3 timeout · 4 merged at another tip · 5 gh down.
 
 **While GitHub Actions starts no job** (a review job that fails in seconds with no steps, its annotation naming the
 account's payments or spending limit — the PR watch exits REVIEW-FAILED on it), nothing above moves a pull request: the
@@ -243,6 +246,7 @@ The HealthWorld box's model is the board's OPEN, the box off until then. This di
 | the freshness check read `gh api --jq '.[].sha'` through the JSON-per-line reader; `--jq` prints a string raw, so the first sha after any commit on main crashed the run — nine queue runs failed in a row and nothing merged for hours while every verdict was CLEAN | `gh_strings` reads `--jq` string output raw; the tests' fake GitHub answers those calls raw, as gh does, so the crash fails a test |
 | sessions waited on hand-written loops: one baselined CONFLICTING and looped four hours (#1561), one started after its merge and ran all night (#1599), one had to be patched to keep going past CLEAN (#1566) — each a deploy or a fix hours late | the PR watch (`pr_watch.py`): checks before it waits, exits on every state the session must act on, never past its cap; a test per failure |
 | the first attempt of the review trigger's run at a pull request's tip failed before any job started (#2435), so no review came, and the PR watch, reading only the reviews, waited toward its cap — as every watch did while Actions refused jobs for billing | the PR watch reads every trigger run at the tip and exits REVIEW-FAILED when none succeeded or still runs and the last failed (a cancelled run is the trigger superseding itself, never a failure) while no verdict is on the tip; its tests fail with either half of the guard removed |
+| #2497's two review-trigger runs sat queued four hours with no job while later pull requests' runs completed; GitHub answered a cancel of either that it was completed, and the PR watch, reading a queued run as a review still coming, waited to its cap | the watch exits REVIEW-STALLED once the trigger's run at the tip has sat queued twenty minutes with no verdict on the tip, naming the re-trigger (draft, then ready); a test of each half fails with it removed |
 | every push to a PR re-reviewed half-finished work | reviews only for ready PRs; drafts fire nothing |
 | a test JobWorld box's heartbeat, left on, spent the whole MiniMax plan the reviewer runs on, and no pull request from any session could merge for days | no box holds the key between proofs, and a proof runs with the box's loop off (§10); the model's check marks a tip UNREVIEWED and the queue merges it on its own workflows' checks, the review after the merge (§2) |
 | the first queue built to merge UNREVIEWED pull requests counted every check, and Cloudflare's preview build of the business site fails on every pull request in the canonical home, so it would have merged none | the queue counts only the checks the repository's own workflows run (§5); a test pins Cloudflare's own shape, and fails with the guard removed |
