@@ -92,7 +92,7 @@ queue by hand.
 | daily, 07:17 UTC | `sweep.yml` (here) | the sweep over every source repo, and the late reviews owed | only in the reviews it dispatches, ≤10 a run, 3 min apart |
 | the model refuses (429 · 5xx · no answer · 401/403), three tries a minute apart | `review.yml`'s first step (`outage.py probe`) | `VERDICT: UNREVIEWED` posted on the tip, the queue handed it | no — one one-token question |
 | the default branch moves | the absorber's job file on the OM daemon's calendar, every fifteen minutes, on our own machine (`scalable-publishing/DESIGN.md` §1) — not a GitHub workflow | publishing — not the CI | no |
-| a push to the default branch touching `application/lamai-saas`'s code — not only its documents (its `.md` files, `.claude/`, `records/`, `docs/`) | the canonical home's `deploy-lamai-on-main.yml` | LAMAI's deploy (path-gated; `application/lamai-saas` DESIGN §4) — not the CI | no |
+| a push to the default branch touching `application/lamai-saas`'s code — not only its documents (its `.md` files, `.claude/`, `records/`, `docs/`) or its `workspace/` | the canonical home's `deploy-lamai-on-main.yml` | LAMAI's deploy (path-gated; `application/lamai-saas` DESIGN §4) — not the CI | no |
 
 A commit does not call the CI. A push to a branch with no ready PR does not call it. Nothing fires when a branch is
 created: a session opens its own PR, and the sweep opens one for a branch left without one.
