@@ -1,9 +1,11 @@
 ---
 name: review-pr-diff
-description: "Review a pull request's diff and post the review. Use when MODE=review — a PR was opened or updated and you must read its diff against the base branch, find real bugs, and post a review with gh."
+description: "WHAT: review a pull request's diff and post the review with gh. WHEN: MODE=review and a PR was opened or updated."
 ---
 
 # Review PR Diff (MODE=review)
+
+**In full:** Review a pull request's diff and post the review. Use when MODE=review — a PR was opened or updated and you must read its diff against the base branch, find real bugs, and post a review with gh.
 
 You are reviewing PR `#$PR_NUMBER` on `$GITHUB_REPOSITORY`: head `$HEAD_REF` against base `$BASE_REF`.
 

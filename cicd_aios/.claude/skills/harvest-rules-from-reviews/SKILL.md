@@ -1,9 +1,11 @@
 ---
 name: harvest-rules-from-reviews
-description: "Distill your own recurring review findings into ONE new rule-candidate and open a PR for it. Use when MODE=harvest — the scheduled self-maintenance run that grows your review discipline from your own review history. The maintainer's merge of your PR is the approval gate."
+description: "WHAT: distill your own recurring review findings into one rule candidate and open a PR. WHEN: MODE=harvest, the scheduled self-maintenance run."
 ---
 
 # Harvest Rules From Reviews (MODE=harvest)
+
+**In full:** Distill your own recurring review findings into ONE new rule-candidate and open a PR for it. Use when MODE=harvest — the scheduled self-maintenance run that grows your review discipline from your own review history. The maintainer's merge of your PR is the approval gate.
 
 The loop you implement: your posted reviews are the finding corpus → a RECURRING class of
 finding becomes a RULE-CANDIDATE → you open a PR adding it to your own AIOS rules → the

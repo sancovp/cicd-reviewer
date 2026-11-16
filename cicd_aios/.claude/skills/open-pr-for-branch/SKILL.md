@@ -1,9 +1,11 @@
 ---
 name: open-pr-for-branch
-description: "Open a pull request for a freshly-pushed branch that has no PR yet. Use when MODE=pr — summarize what the branch changes against the default branch and create the PR with gh pr create."
+description: "WHAT: open a pull request for a freshly pushed branch. WHEN: MODE=pr and the branch has no PR yet."
 ---
 
 # Open PR For Branch (MODE=pr)
+
+**In full:** Open a pull request for a freshly-pushed branch that has no PR yet. Use when MODE=pr — summarize what the branch changes against the default branch and create the PR with gh pr create.
 
 A branch (`$HEAD_REF`) was pushed to `$GITHUB_REPOSITORY` with no open PR. Your job: open
 one with a real, useful title and body — not a placeholder.
