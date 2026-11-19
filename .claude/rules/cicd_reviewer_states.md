@@ -17,6 +17,7 @@ A question only *USER* can answer moves: **RAISED** (named) → **PUT** (put to 
 | OM Daily Driver (#1476, parked as a draft) — keep, change or drop | [§8](../../DESIGN.md) | ● | ● | | |
 | merges never wait on the model — ruled: when the reviewer's model is down, the queue merges on the automatic checks and the review runs after the merge; our one MiniMax key (a capped subscription) runs it and a test-box proof alone; until it answers, the session holding the CI lands every merge | [§2](../../DESIGN.md) · [§10](../../DESIGN.md) · [§14](../../DESIGN.md) | ● | ● | ● | ● |
 | merges never wait on Actions — ruled: while GitHub Actions starts no job (the account's billing), the session handles every pull request by the queue's steps by hand, each merge `review-owed` | [§1](../../DESIGN.md) · [§5](../../DESIGN.md) · [§14](../../DESIGN.md) | ● | ● | ● | ● |
+| how the system keeps itself informed — PARKED and STUCK work pushed up the hierarchy, as everything else is, so the host AIOS takes it in and keeps it in what every session loads (a global rule, or another way); the sweep's drafts wait on it | [§6](../../DESIGN.md) | ● | | | |
 | which model the HealthWorld box runs on (off until then); the test business's box for a proof — ruled: our one MiniMax key (a capped subscription), for that proof alone, loop off, unset after (JobWorld §9) | [§10](../../DESIGN.md) | ● | ● | | |
 
 ## THE FLOW
@@ -47,3 +48,5 @@ real pull request) → **LIVE** (what every pull request goes through). `●` = 
 | the late review — a merged `review-owed` pull request reviewed once the model answers; BLOCKING opens a fix issue | [§4](../../DESIGN.md) · [§6](../../DESIGN.md) | ● | ● | | |
 | one tracking issue and one fix issue however close together runs fall — the oldest open `UNMERGED WORK` kept, any other closed; a late review acting only when its removal of `review-owed` is the one GitHub accepts | [§6](../../DESIGN.md) · [§7](../../DESIGN.md) · [§12](../../DESIGN.md) | ● | ● | | |
 | a failed review shown failed on the pull request — today the canonical home's check is the dispatch, green whatever the review does | [§13](../../DESIGN.md) | ● | | | |
+| a branch nobody handed off opened as a draft, PARKED, never merged by itself — built with the way PARKED work reaches every session | [§6](../../DESIGN.md) | ● | | | |
+| the work guard before a merge — the publisher's check run on every published unit a pull request touches, a refusal holding it STUCK | [§5](../../DESIGN.md) | ● | | | |

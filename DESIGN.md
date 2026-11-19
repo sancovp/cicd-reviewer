@@ -1,5 +1,17 @@
 # cicd-reviewer — DESIGN
 
+## READ ORDER
+
+The CI: this one design, with no child design beneath it.
+
+- for what it is, its law, and a pull request's life (the flow, the PR watch, the states) → §0 · §1 · §2
+- for what calls it and what that costs → §3 · for the reviewer, the late review and the coordinator → §4
+- for the merge queue and the queue by hand → §5 · for the sweep and the tracking issue → §6 · §7
+- for each repository's policy, the rule harvest, where it runs, its laws → §8 · §9 · §10 · §11
+- for the failures seen and their guards, what is built and owed, and how to change it → §12 · §13 · §14
+- the session's side of the flow → the rule `top-level-session-worktree` (THE GIT LOOP)
+- ARCHIVE AND PROGRAM FOLDERS: `cicd_aios/` · `tests/` · `context/` · `docs/` · `.github/`
+
 ## 0. This document
 
 The one design of the CI: how work gets from a session's branch onto the default branch, every trigger, every
@@ -122,7 +134,11 @@ its files (more than 100 commits since ⇒ not fresh). Ready-and-fresh PRs are g
 merges; a larger group goes to the coordinator, the first in its order merges, the rest are reviewed again against the
 new main, each held one gets one comment; a group holding an UNREVIEWED PR skips the coordinator (it is the model, which
 was down) and goes oldest first. A PR merged UNREVIEWED is labelled `review-owed`. A CONFLICT gets one comment. Every merge is a squash at the reviewed tip
-(`--match-head-commit`), the branch deleted. Never a force push.
+(`--match-head-commit`), the branch deleted. Never a force push. ASPIRATIONAL: before a merge, the queue runs the
+publisher's work guard (`scalable-publishing/bin/publish_unit.sh --check`, `scalable-publishing/DESIGN.md` §2) at the
+PR's tip on every published unit its changed paths select (`select_units_for_paths.py`), and a refusal holds the PR
+STUCK, naming each path and its remedy, so a scratchpad or a hosted-only mark never reaches the default branch, where
+it would block every publish of its unit; the queue by hand runs the same check.
 
 **The checks it counts** are those the repository's own workflows run — GitHub gives each a workflow name. An outside
 app's check (a hosting provider's preview build, a commit status) carries none and is not counted: Cloudflare's preview
@@ -159,7 +175,10 @@ asked only where the repository's own `has_pages` says it has a site, so a token
 those repositories; a 404 means no site, and a repository whose site cannot be read is skipped that run, never swept
 blind): its tip already on the default branch (GraphQL's comparison — never the REST diff, which fails on large
 ones) ⇒ deleted · a draft PR ⇒ PARKED · a ready PR with a CLEAN or UNREVIEWED verdict ⇒ its repo handed to the merge queue ·
-no verdict ⇒ a review dispatched · no PR ⇒ one opened, ready · a CONFLICT or BLOCKING ⇒ STUCK · a branch of a PUBLISH TARGET (a repo
+no verdict ⇒ a review dispatched · no PR ⇒ one opened, ready (ASPIRATIONAL: opened as a DRAFT, so PARKED, since only a
+session hands work off and a branch nobody handed off never merges by itself; it waits on the way PARKED work reaches every
+session, pushed up the hierarchy into what the host AIOS keeps loaded, the board's OPEN row, and both are built
+together) · a CONFLICT or BLOCKING ⇒ STUCK · a branch of a PUBLISH TARGET (a repo
 the publishing pipeline overwrites, read from `scalable-publishing/publish-manifest.json`) ⇒ STUCK, to be ported into its
 source in the canonical home, never merged there. Then every merged PR labelled `review-owed`, in any repository the
 owner has, is sent to the reviewer, merged (its default branch checked out), within the same review budget: its late
