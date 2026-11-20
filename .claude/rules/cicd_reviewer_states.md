@@ -17,7 +17,7 @@ A question only *USER* can answer moves: **RAISED** (named) → **PUT** (put to 
 | OM Daily Driver (#1476, parked as a draft) — keep, change or drop | [§8](../../DESIGN.md) | ● | ● | | |
 | merges never wait on the model — ruled: when the reviewer's model is down, the queue merges on the automatic checks and the review runs after the merge; our one MiniMax key (a capped subscription) runs it and a test-box proof alone; until it answers, the session holding the CI lands every merge | [§2](../../DESIGN.md) · [§10](../../DESIGN.md) · [§14](../../DESIGN.md) | ● | ● | ● | ● |
 | merges never wait on Actions — ruled: while GitHub Actions starts no job (the account's billing), the session handles every pull request by the queue's steps by hand, each merge `review-owed` | [§1](../../DESIGN.md) · [§5](../../DESIGN.md) · [§14](../../DESIGN.md) | ● | ● | ● | ● |
-| how PARKED and STUCK work reaches every session, pushed up the hierarchy into what the host AIOS keeps loaded; the sweep's drafts wait on it; ruled designed as the first monitor of SANCREV's control center | [§6](../../DESIGN.md) · SANCREV's `DESIGN.md` §1 | ● | ● | | |
+| how PARKED and STUCK work reaches every session, pushed up the hierarchy into what the host AIOS keeps loaded; the sweep's drafts wait on it; ruled designed as the first monitor of SANCREV's control center | [§6](../../DESIGN.md) · SANCREV's `DESIGN.md` §1.1 | ● | ● | ● | ● |
 | which model the HealthWorld box runs on (off until then); the test business's box for a proof — ruled: our one MiniMax key (a capped subscription), for that proof alone, loop off, unset after (JobWorld §9) | [§10](../../DESIGN.md) | ● | ● | | |
 
 ## THE FLOW
