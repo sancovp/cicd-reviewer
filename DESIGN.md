@@ -8,11 +8,17 @@ The CI: this one design, with no child design beneath it.
 - for what calls it and what that costs → §3 · for the reviewer, the late review and the coordinator → §4
 - for the merge queue and the queue by hand → §5 · for the sweep and the tracking issue → §6 · §7
 - for each repository's policy, the rule harvest, where it runs, its laws → §8 · §9 · §10 · §11
+> **WARNING: STATE MENTIONED IN DESIGN.MD -- NOT ALLOWED IN DESIGN. THIS MUST MOVE TO STATE FILE WHEN WORKED ON. DO NOT REMOVE THIS FENCE UNTIL THE STATE IS RECONCILED AND EVERY INTENDED THING IS BUILT AS INTENDED. DO NOT SKIP THIS.**
+
 - for the failures seen and their guards, what is built and owed, and how to change it → §12 · §13 · §14
+
+> **END OF STATE FENCE**
 - the session's side of the flow → the rule `top-level-session-worktree` (THE GIT LOOP)
 - ARCHIVE AND PROGRAM FOLDERS: `cicd_aios/` · `tests/` · `context/` · `docs/` · `.github/`
 
 ## 0. This document
+
+> **WARNING: STATE MENTIONED IN DESIGN.MD -- NOT ALLOWED IN DESIGN. THIS MUST MOVE TO STATE FILE WHEN WORKED ON. DO NOT REMOVE THIS FENCE UNTIL THE STATE IS RECONCILED AND EVERY INTENDED THING IS BUILT AS INTENDED. DO NOT SKIP THIS.**
 
 The one design of the CI: how work gets from a session's branch onto the default branch, every trigger, every
 workflow, both AI tiers, the merge queue, the sweep, what each costs, what is built and what is owed. It covers both
@@ -21,6 +27,8 @@ it) and the one trigger in the canonical home (`.github/workflows/cicd-review-on
 `.claude/rules/cicd_reviewer_states.md` (its `## OPEN` table is what waits on *USER*). The stack:
 `.claude/rules/21-architecture-diagrams.md`. History: `CHANGELOG.md` beside this file (publishing never copies it).
 The session's side of the flow is also a rule every session carries: `top-level-session-worktree` (THE GIT LOOP).
+
+> **END OF STATE FENCE**
 
 ## 1. What it is, and the one law
 
@@ -126,6 +134,8 @@ comments or reviews; the queue acts on its file, and with no decision falls back
 
 ## 5. The merge queue (`merge_queue.py` · `.github/workflows/merge-queue.yml`)
 
+> **WARNING: STATE MENTIONED IN DESIGN.MD -- NOT ALLOWED IN DESIGN. THIS MUST MOVE TO STATE FILE WHEN WORKED ON. DO NOT REMOVE THIS FENCE UNTIL THE STATE IS RECONCILED AND EVERY INTENDED THING IS BUILT AS INTENDED. DO NOT SKIP THIS.**
+
 One run at a time per repository (the workflow's concurrency group). A PR is **ready** when it is open into the default
 branch, not a draft, not from the standing branch or from the branch the repository's GitHub Pages site is built from
 (every merge deletes its branch, and that branch is the live site), its verdict on its exact tip is CLEAN — or UNREVIEWED with every check its
@@ -140,12 +150,18 @@ PR's tip on every published unit its changed paths select (`select_units_for_pat
 STUCK, naming each path and its remedy, so a scratchpad or a hosted-only mark never reaches the default branch, where
 it would block every publish of its unit; the queue by hand runs the same check.
 
+> **END OF STATE FENCE**
+
+> **WARNING: STATE MENTIONED IN DESIGN.MD -- NOT ALLOWED IN DESIGN. THIS MUST MOVE TO STATE FILE WHEN WORKED ON. DO NOT REMOVE THIS FENCE UNTIL THE STATE IS RECONCILED AND EVERY INTENDED THING IS BUILT AS INTENDED. DO NOT SKIP THIS.**
+
 **The checks it counts** are those the repository's own workflows run — GitHub gives each a workflow name. An outside
 app's check (a hosting provider's preview build, a commit status) carries none and is not counted: Cloudflare's preview
 build of the business site runs on every pull request in the canonical home, whatever it touches, and fails on every one.
 In the canonical home the own checks are the review trigger's SkillTree structure gate (§3) and, for the inner app's
 source, `validate-inner-app.yml`; no workflow runs a project's tests, so a pull request merged UNREVIEWED is read only by
 its late review.
+
+> **END OF STATE FENCE**
 
 **THE QUEUE BY HAND.** While GitHub Actions starts no job, the session does the queue's work itself, by the same tests
 and in the same order, in every repository the CI covers (§8). A pull request is ready when it is open into the default
@@ -169,6 +185,8 @@ a Pages source branch among them — is parked as a draft with its reason.
 
 ## 6. The sweep (`sweep.py` · `.github/workflows/sweep.yml`)
 
+> **WARNING: STATE MENTIONED IN DESIGN.MD -- NOT ALLOWED IN DESIGN. THIS MUST MOVE TO STATE FILE WHEN WORKED ON. DO NOT REMOVE THIS FENCE UNTIL THE STATE IS RECONCILED AND EVERY INTENDED THING IS BUILT AS INTENDED. DO NOT SKIP THIS.**
+
 Daily over every source repository the owner has (not forks, not archived), every branch except the default, the
 standing branch and the branch the repository's GitHub Pages site is built from (`pages_branch`: `repos/…/pages` is
 asked only where the repository's own `has_pages` says it has a site, so a token that cannot read Pages pauses only
@@ -189,7 +207,11 @@ the late review removes it by number before it acts, GitHub removes a label once
 review whose removal is refused opens nothing and changes nothing. A "Fix owed" issue that then fails to open puts the
 label back, so the next sweep sends the review again (`outage.py close-late`).
 
+> **END OF STATE FENCE**
+
 ## 7. The tracking issue — `UNMERGED WORK`
+
+> **WARNING: STATE MENTIONED IN DESIGN.MD -- NOT ALLOWED IN DESIGN. THIS MUST MOVE TO STATE FILE WHEN WORKED ON. DO NOT REMOVE THIS FENCE UNTIL THE STATE IS RECONCILED AND EVERY INTENDED THING IS BUILT AS INTENDED. DO NOT SKIP THIS.**
 
 One issue on the canonical home, rewritten by every sweep: **STUCK** (work the CI cannot move — conflicts,
 BLOCKING verdicts, publish targets; each with why), **PARKED** (drafts), and **REVIEW OWED** (merged while the model was
@@ -200,7 +222,11 @@ runs two sweeps at once, so every run keeps the same one, and a second opened by
 the next run. A late review that finds a defect opens its own "Fix owed" issue in its repository. A session starting
 work in a repository reads that repository's STUCK rows and clears them before anything else.
 
+> **END OF STATE FENCE**
+
 ## 8. Repositories and their policy
+
+> **WARNING: STATE MENTIONED IN DESIGN.MD -- NOT ALLOWED IN DESIGN. THIS MUST MOVE TO STATE FILE WHEN WORKED ON. DO NOT REMOVE THIS FENCE UNTIL THE STATE IS RECONCILED AND EVERY INTENDED THING IS BUILT AS INTENDED. DO NOT SKIP THIS.**
 
 | repository | how work reaches its default branch |
 |---|---|
@@ -210,10 +236,18 @@ work in a repository reads that repository's STUCK rows and clears them before a
 | publish targets (`cave`, `chaincompiler`, `carton-mcp` …) | never merged into: their source is the canonical home |
 | frozen copies — a standalone repository whose project was folded into the canonical home (`onionmorph`, `agent-rts`, `twi-jobworld`, `gas_bootstrap_depth_system`, `map` — MAP at `base/crystal-ball-alpha/MAP/map`) or kept for reference only (`matrix`) | never merged into: a branch's work missing from the canonical home is ported there (union, zero deletes), by the project's own lane |
 
+> **END OF STATE FENCE**
+
+> **WARNING: STATE MENTIONED IN DESIGN.MD -- NOT ALLOWED IN DESIGN. THIS MUST MOVE TO STATE FILE WHEN WORKED ON. DO NOT REMOVE THIS FENCE UNTIL THE STATE IS RECONCILED AND EVERY INTENDED THING IS BUILT AS INTENDED. DO NOT SKIP THIS.**
+
 The standing branch `om-is-the-base` (the mind_of_god machine's own line of work) is never reviewed, queued, swept or
 merged; its PR #165 is a draft. A repository's GitHub Pages source branch is the live site, so it is never queued, swept,
 merged or deleted either; of the owner's 15 Pages sites one is built from a branch other than its default —
 `director-cinematic-site`'s `gh-pages` — and the pull request the sweep once opened for it is parked as a draft.
+
+> **END OF STATE FENCE**
+
+> **WARNING: STATE MENTIONED IN DESIGN.MD -- NOT ALLOWED IN DESIGN. THIS MUST MOVE TO STATE FILE WHEN WORKED ON. DO NOT REMOVE THIS FENCE UNTIL THE STATE IS RECONCILED AND EVERY INTENDED THING IS BUILT AS INTENDED. DO NOT SKIP THIS.**
 
 ## 9. Self-maintenance — the rule harvest (OFF)
 
@@ -223,7 +257,11 @@ tool calls and never finished — on billed minutes, so it is manual only. Owed 
 (free minutes) and opens its rule PRs as DRAFTS, because the queue merges any ready PR with a CLEAN verdict and the
 reviewer must not approve a rule it wrote; who marks a rule PR ready is OPEN (the board).
 
+> **END OF STATE FENCE**
+
 ## 10. Where it runs and what it holds
+
+> **WARNING: STATE MENTIONED IN DESIGN.MD -- NOT ALLOWED IN DESIGN. THIS MUST MOVE TO STATE FILE WHEN WORKED ON. DO NOT REMOVE THIS FENCE UNTIL THE STATE IS RECONCILED AND EVERY INTENDED THING IS BUILT AS INTENDED. DO NOT SKIP THIS.**
 
 The reviewer's image `ghcr.io/sancovp/cicd-reviewer` (built by `build-image.yml` when `ci_agent.py`, `cicd_aios/`,
 `entrypoint.sh` or the `Dockerfile` change) runs on this public repo's runners with two secrets: `MINIMAX_API_KEY` (the
@@ -235,6 +273,8 @@ reviewer's plan too. GHL's reviewers never reach that box: the add-on's review v
 DESIGN §9 THE LAUNCH GATE).
 The HealthWorld box's model is the board's OPEN, the box off until then. This directory is authored in the canonical home at `automation/cicd-reviewer/` and mirrored here by
 `scalable-publishing` on every push to the default branch that touches it — never edited here.
+
+> **END OF STATE FENCE**
 
 ## 11. Laws
 
@@ -249,6 +289,8 @@ The HealthWorld box's model is the board's OPEN, the box off until then. This di
 - The model never does what git's API can do.
 - No fork-reachable trigger on any workflow here: this public repo holds a token that reads the private canonical home.
 - Never a force push, anywhere.
+
+> **WARNING: STATE MENTIONED IN DESIGN.MD -- NOT ALLOWED IN DESIGN. THIS MUST MOVE TO STATE FILE WHEN WORKED ON. DO NOT REMOVE THIS FENCE UNTIL THE STATE IS RECONCILED AND EVERY INTENDED THING IS BUILT AS INTENDED. DO NOT SKIP THIS.**
 
 ## 12. Failures seen, and the guard each now has
 
@@ -275,6 +317,10 @@ The HealthWorld box's model is the board's OPEN, the box off until then. This di
 | the absorber's notice, found by a listing as the tracking issue is, opened two issues for one failure (#2488, #2489): GitHub's listings — search, label and REST alike — miss an issue made seconds before, so two sweeps close together could each open an `UNMERGED WORK`, and a late review sent by a search that still listed its pull request could open a second "Fix owed" | every sweep keeps the oldest open tracking issue and closes the rest as its duplicates (§7); the late review takes the `review-owed` label off as its claim, and only the review whose removal GitHub accepts acts (§6); a test of each fails with its guard removed, the late review's with two reviews that both read the label before either took it |
 | the sweep opened a pull request from `director-cinematic-site`'s `gh-pages`, the branch its GitHub Pages site is built from, and every way of merging it hurt the site: the queue's squash deletes the branch, a merge commit puts its tip on the default branch where the sweep deletes it, and a squash alone leaves it ahead, reopened daily | the sweep and the queue read each repository's Pages source (`pages_branch`) and keep it as they keep the standing branch; a repository whose site cannot be read is skipped; a test of each fails with the guard removed |
 
+> **END OF STATE FENCE**
+
+> **WARNING: STATE MENTIONED IN DESIGN.MD -- NOT ALLOWED IN DESIGN. THIS MUST MOVE TO STATE FILE WHEN WORKED ON. DO NOT REMOVE THIS FENCE UNTIL THE STATE IS RECONCILED AND EVERY INTENDED THING IS BUILT AS INTENDED. DO NOT SKIP THIS.**
+
 ## 13. Built, and owed
 
 BUILT and proven live: the verdict line · the merge queue (#1486, #1487, #1488, #1490, #1491 merged with nobody
@@ -285,6 +331,8 @@ own workflows' checks, each labelled `review-owed`). BUILT, tests green, to prov
 and its "Fix owed" issue. ASPIRATIONAL: the review trigger in every active repo (§8) · the harvest moved here, drafting
 its rule PRs (§9) · a cost meter (reviews and model spend per day) · a failed review shown failed on the pull request (the
 canonical home's check is the trigger's dispatch, green whatever the review then does).
+
+> **END OF STATE FENCE**
 
 ## 14. How to change it
 
