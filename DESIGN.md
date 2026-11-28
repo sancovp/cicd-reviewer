@@ -95,7 +95,7 @@ queue by hand.
 |---|---|---|
 | DRAFT | parked, or still being worked on | a session marks it ready |
 | READY | asking for a review | the reviewer |
-| BLOCKING | a real defect found | the session that owns the work: fix, push |
+| BLOCKING | a real defect that the PR's own change adds or makes worse, in what the PR is for (§11) | the session that owns the work: fix, push |
 | CLEAN | reviewed and fine on this exact tip | the merge queue |
 | UNREVIEWED | the model did not answer at this tip; merged once its own workflows' checks pass, then labelled `review-owed` | the merge queue; after the merge, the sweep and the late review |
 | STALE | CLEAN, but main has since changed its files | the queue sends it for review again |
@@ -283,6 +283,12 @@ The HealthWorld box's model is the board's OPEN, the box off until then. This di
   workflows passed — and a verdict counts only while fresh.
 - Merges never wait on Actions: while it starts no job, every pull request the session merges is `review-owed`.
 - Merges never wait on the model: a PR merged UNREVIEWED is reviewed after it merges, and a defect found then opens a fix.
+- A review converges. A verdict is BLOCKING only for a defect the PR's own change adds or makes worse, in what the PR
+  is for — the version it carries, as its description and its project's board name it. Every other finding — a defect
+  that was there before, one in a part the PR only touches in passing, a wording, a note — is written in the review as
+  OWED and never blocks: the review names the project it belongs to, and the session records it on that project's board
+  in the same PR. A review of a new tip reads only what changed since the last reviewed tip, together with the findings
+  that review blocked on, so a fix opens no fresh review of the whole PR.
 - Our one MiniMax key, on a capped subscription, runs the reviewer; no box holds it but the test business's during a proof, its loop off, unset after.
 - Nothing fires on a draft or on the standing branch.
 - A GitHub Pages source branch is the live site: never merged, never deleted.
