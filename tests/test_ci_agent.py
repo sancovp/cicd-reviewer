@@ -126,6 +126,95 @@ def t_harvest_alone_reads_its_result_off_the_text():
     assert not ci_agent.result_exists("harvest", "still working", "o/r", "x")
 
 
+def _rv(sha, at, body):
+    return {"commit_id": sha, "submitted_at": f"2026-11-28T0{at}:00:00Z", "body": body}
+
+
+def t_a_review_blocks_only_on_the_prs_own_defect_and_owes_the_rest():
+    # the README generator's PR went through about ten review rounds, most on a side piece outside its purpose
+    for p in (ci_agent._review_prompt("/repo", "o/r", "7", "main", "work"), ci_agent._late_review_prompt("o/r", "9")):
+        assert "what the pull request is for" in p and "gh pr view" in p and "_states.md" in p
+        assert "BLOCKING only when the pull request's own change adds the defect or makes it worse" in p
+        assert ci_agent.BLOCKING_MARK + ": <path:line>" in p and ci_agent.OWED_MARK + " (<the folder" in p
+        assert "never blocks" in p and "\\" not in p
+    assert "OWED findings may sit above it" in ci_agent._review_prompt("/repo", "o/r", "7", "main", "work")
+
+
+def t_the_last_reviewed_tip_is_the_newest_verdict_on_another_tip():
+    lr = ci_agent.last_reviewed
+    rs = [_rv("a", 1, "x\n- BLOCKING: `f.py:1` — crash\nVERDICT: BLOCKING"), _rv("b", 2, "y\nVERDICT: CLEAN"),
+          _rv("c", 3, "the model did not answer\nVERDICT: UNREVIEWED"), _rv("d", 4, "a note, no verdict")]
+    assert lr(rs, "head")["commit_id"] == "b" and lr(rs, "head")["verdict"] == "VERDICT: CLEAN"
+    assert lr(rs[:1], "head")["commit_id"] == "a"
+    assert lr(rs[2:], "head") is None and lr([], "head") is None          # UNREVIEWED and no verdict are no review
+    # this very tip already has a verdict: the queue's freshness review, read whole against the new default branch —
+    # and an UNREVIEWED tip sent back because it overlaps what just merged is read whole the same way
+    assert lr(rs + [_rv("head", 5, "z\nVERDICT: CLEAN")], "head") is None
+    assert lr(rs + [_rv("head", 5, "the model did not answer\nVERDICT: UNREVIEWED")], "head") is None
+    # a note on this tip with no verdict leaves the last reviewed tip as it was
+    assert lr(rs + [_rv("head", 5, "a note")], "head")["commit_id"] == "b"
+
+
+def t_the_next_tips_review_reads_what_changed_and_what_it_blocked_on():
+    prior = dict(_rv("a1b2c3", 1, "two things\n- BLOCKING: `f.py:1` — crash on []\n- OWED (base/x): `g.py:2` — old\n"
+                                   "VERDICT: BLOCKING"), verdict="VERDICT: BLOCKING")
+    p = ci_agent._review_prompt("/repo", "o/r", "7", "main", "work", prior)
+    assert "already reviewed at `a1b2c3`" in p and "`git -C /repo diff a1b2c3 HEAD`" in p and "Review ONLY what changed" in p
+    assert "`f.py:1` — crash on []" in p and "g.py:2" not in p                     # what it blocked on, not what it owed
+    assert "only what changed since that tip" in p
+    assert "already reviewed" not in ci_agent._review_prompt("/repo", "o/r", "7", "main", "work")
+    # a review from before the marked lines gives its whole body; a CLEAN one blocked on nothing
+    old = dict(_rv("a", 1, "line 4 crashes\nVERDICT: BLOCKING"), verdict="VERDICT: BLOCKING")
+    assert ci_agent.blocked_findings(old) == "line 4 crashes"
+    assert "none" in ci_agent.blocked_findings(dict(_rv("a", 1, "ok\nVERDICT: CLEAN"), verdict="VERDICT: CLEAN"))
+    huge = dict(_rv("a", 1, "x" * 50000 + "\nVERDICT: BLOCKING"), verdict="VERDICT: BLOCKING")
+    assert len(ci_agent.blocked_findings(huge)) == ci_agent.PRIOR_FINDINGS_MAX
+
+
+def t_a_new_tip_reads_on_only_from_an_ancestor_with_no_default_branch_merged_in_since():
+    # `git diff <tip> HEAD` is the pull request's own change only when no merge of the default branch came in since
+    # the tip; after one, it carries the default branch's lines, and a review of them blocks on what the PR never wrote
+    rs = [_rv("a", 1, "ok\nVERDICT: CLEAN"), _rv("b", 2, "ok\nVERDICT: CLEAN")]
+
+    def world(ancestors, mbs, head="head"):
+        def git(*a):
+            if a[:2] == ("merge-base", "--is-ancestor"):
+                return (0 if a[2] in ancestors else 1), ""
+            mb = mbs.get(a[2])
+            return (0, mb) if mb else (1, "")
+        saved = ci_agent._reviews, ci_agent._head
+        ci_agent._reviews, ci_agent._head = (lambda g, p: rs), (lambda g, p: head)
+        try:
+            got = ci_agent.prior_tip("/repo", "o/r", "7", "main", git=git)
+        finally:
+            ci_agent._reviews, ci_agent._head = saved
+        return got and got["commit_id"]
+    assert world({"a", "b"}, {"HEAD": "m1", "a": "m1", "b": "m1"}) == "b"
+    assert world({"a", "b"}, {"HEAD": "m2", "a": "m1", "b": "m2"}) == "b"
+    assert world({"a", "b"}, {"HEAD": "m2", "a": "m1", "b": "m1"}) is None        # the default branch merged in since
+    assert world({"a"}, {"HEAD": "m1", "a": "m1", "b": "m1"}) == "a"               # b rewritten away: the older ancestor
+    assert world(set(), {"HEAD": "m1", "a": "m1", "b": "m1"}) is None               # a rewritten history
+    assert world({"a", "b"}, {"a": "m1", "b": "m1"}) is None                        # no merge base for the head
+    assert world({"a", "b"}, {"HEAD": "m1", "a": "m1", "b": "m1"}, head="") is None  # the head could not be read
+    src = open(_CI_AGENT).read()
+    assert 'prior = prior_tip(repo, gh_repo, pr, os.environ.get("BASE_REF", "") or "main")' in src
+    assert 'os.environ.get("HEAD_REF", ""), prior,' in src
+
+
+def t_a_review_whose_findings_disagree_with_its_verdict_is_no_result():
+    vp, lp = ci_agent.verdict_posted, ci_agent.late_verdict_posted
+    bad = "- BLOCKING: `f.py:1` — crash\nVERDICT: CLEAN"
+    assert not vp([{"commit_id": "t", "submitted_at": "2026-01-02T00:00:00Z", "body": bad}], "t", "2026-01-01T00:00:00Z")
+    assert not lp([{"created_at": "2026-01-02T00:00:00Z", "body": bad}], "2026-01-01T00:00:00Z")
+    good = "- OWED (base/x): `g.py:2` — old\n- FIXED: `f.py:1` — guarded\nVERDICT: CLEAN"
+    assert vp([{"commit_id": "t", "submitted_at": "2026-01-02T00:00:00Z", "body": good}], "t", "2026-01-01T00:00:00Z")
+    # read as the queue reads it: BLOCKING, so the next tip carries that line
+    assert ci_agent.last_reviewed([_rv("a", 1, bad)], "head")["verdict"] == "VERDICT: BLOCKING"
+    assert "f.py:1" in ci_agent.blocked_findings(ci_agent.last_reviewed([_rv("a", 1, bad)], "head"))
+    assert ci_agent.FIXED_MARK in ci_agent._review_prompt("/repo", "o/r", "7", "main", "w", dict(_rv("a", 1, bad),
+                                                                                              verdict="VERDICT: BLOCKING"))
+
+
 def run_all():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("t_")]
     passed = 0

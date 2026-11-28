@@ -106,6 +106,19 @@ def t_a_clean_late_review_only_takes_the_label_off():
     assert run() == 0 and state["issues"] == 0 and sweep.REVIEW_OWED not in state["labels"]
 
 
+def t_a_late_reviews_findings_reach_an_issue_since_no_session_owns_the_merged_pr():
+    # a late review's OWED lines had no reader: the PR was merged, no session watched it, and only BLOCKING opened an
+    # issue — so they were lost
+    run, calls, state = _close("fine for what it is for\n- OWED (base/x): `g.py:2` — old\nVERDICT: CLEAN")
+    assert run() == 0 and state["issues"] == 1 and sweep.REVIEW_OWED not in state["labels"]
+    made = [a for a in calls if a[:2] == ["issue", "create"]][0]
+    assert any("Owed findings: #9" in x for x in made) and any("`g.py:2` — old" in x for x in made)
+    run, calls, state = _close("- BLOCKING: `f.py:1` — crash\n- OWED (base/x): `g.py:2` — old\nVERDICT: BLOCKING")
+    assert run() == 0 and state["issues"] == 1
+    made = [a for a in calls if a[:2] == ["issue", "create"]][0]
+    assert any("Fix owed: #9" in x for x in made) and any("`f.py:1` — crash" in x and "`g.py:2`" in x for x in made)
+
+
 def t_no_late_verdict_keeps_the_label_for_the_next_sweep():
     run, calls, state = _close(None)
     assert run() == 1 and _writes(calls) == [] and sweep.REVIEW_OWED in state["labels"]

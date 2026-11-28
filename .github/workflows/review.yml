@@ -1,17 +1,9 @@
 name: Run reviewer (dispatched)
 
 # ─────────────────────────────────────────────────────────────────────────────────────────
-# THE DOOR. This is the file that was missing (verified 2026-09-06: zero `repository_dispatch`
-# and zero `workflow_call` anywhere in either repo — the reviewer had no inbound entry point,
-# so nothing could ever call it, so the private monorepo ran it on its own billed runner).
-#
-# Isaac, 2026-09-06: "the public repo is MY REPO THAT HAS MY TOKENS AND EVERYTHING — it is
-# supposed to be GETTING CALLED." This is that call being received.
-#
-# WHY IT BELONGS HERE: this repo is PUBLIC, so its Actions minutes are free. The monorepo is
-# PRIVATE and bills every minute. Publishing this reviewer in July 2026 moved its SOURCE out
-# and made it build its OWN image ("self-hosting" — build-image.yml); it never moved the RUN.
-# This file moves the run.
+# THE DOOR. The reviewer's one inbound entry point: the canonical home's review trigger, and the sweep, dispatch here
+# (`repository_dispatch`), so the review runs on this public repository's free Actions minutes and never on the
+# private canonical home's billed ones.
 #
 # Authored in the monorepo at automation/cicd-reviewer/.github/workflows/ and mirrored out by
 # scalable-publishing (repo-canonicity: edit up, publish down — never hand-edit the public copy).

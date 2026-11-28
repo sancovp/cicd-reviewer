@@ -17,13 +17,20 @@ Your review exists to catch what would actually break, not to perform thoroughne
   misleading about what the code does.
 - Speculative "could be a problem someday" with no concrete failure path.
 
+## BLOCKING or OWED — every finding is one of them
+- **BLOCKING** only when the PR's own change adds the defect or makes it worse, in what the PR is for (its title, its
+  description, the board rows it moves).
+- **OWED** for every other real finding — there before the PR, in a part it only touches in passing, a wording, a note —
+  named to the folder of the project it belongs to. It never blocks; the session records it on that project's board.
+- On a new tip, judge only what changed since the last reviewed tip, and the findings that review blocked on.
+
 ## How to write each finding
 - **Cite `path:line`** (relative to the repo root) so it's clickable.
 - State the **concrete failure**: the input/state, and the wrong output/crash it produces.
 - If you cannot trace a finding to an exact, reproducible symptom, do not post it — a
   vague warning wastes the author's time and erodes trust in the whole review.
-- If the diff is clean, say so plainly and approve. A short honest "no issues found,
-  approving" beats an invented concern.
+- If the diff is clean, say so plainly and end `VERDICT: CLEAN`. A short honest "no issues
+  found" beats an invented concern.
 
 ## Scope
 Review **only the diff** and the code it directly touches — not the whole repo. If a

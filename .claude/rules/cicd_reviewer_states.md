@@ -49,5 +49,21 @@ real pull request) → **LIVE** (what every pull request goes through). `●` = 
 | one tracking issue and one fix issue however close together runs fall — the oldest open `UNMERGED WORK` kept, any other closed; a late review acting only when its removal of `review-owed` is the one GitHub accepts | [§6](../../DESIGN.md) · [§7](../../DESIGN.md) · [§12](../../DESIGN.md) | ● | ● | | |
 | a failed review shown failed on the pull request — today the canonical home's check is the dispatch, green whatever the review does | [§13](../../DESIGN.md) | ● | | | |
 | a branch nobody handed off opened as a draft, PARKED, never merged by itself — built with the way PARKED work reaches every session | [§6](../../DESIGN.md) | ● | | | |
-| a review converges — BLOCKING only for a defect the PR's own change adds in what it is for, every other finding OWED to its project's board; a new tip's review reads only what changed since the last reviewed tip and the findings it blocked on | [§11](../../DESIGN.md) · [§2](../../DESIGN.md) | ● | | | |
+| a review converges — BLOCKING only for a defect the PR's own change adds in what it is for, every other finding OWED to its project's board; a new tip's review reads only what changed since the last reviewed tip and the findings it blocked on | [§11](../../DESIGN.md) · [§2](../../DESIGN.md) | ● | ● | | |
+| a late review's findings reach an issue — Fix owed holding every finding line, or Owed findings for OWED lines alone | [§4](../../DESIGN.md) · [§11](../../DESIGN.md) | ● | ● | | |
+| a review's finding lines and its verdict agree — a CLEAN verdict under a standing BLOCKING line read BLOCKING by every reader, and no result for the reviewer's run | [§11](../../DESIGN.md) | ● | ● | | |
+| the PR watch names a review's OWED findings on every line, MERGED's saying to record them; with `--expect-head` it judges nothing until GitHub shows that tip, exiting PUSHED past it and TIP-UNSEEN after ten polls | [§2](../../DESIGN.md) | ● | ● | | |
 | the work guard before a merge — the publisher's check run on every published unit a pull request touches, a refusal holding it STUCK | [§5](../../DESIGN.md) | ● | | | |
+
+## THE VERSIONS
+
+Each release version of the design's ITS VERSIONS. Phases (stated once in
+[`22-seq-write-a-readme-from-its-design.md`](../../../../scalable-publishing/.claude/rules/22-seq-write-a-readme-from-its-design.md)):
+**DESIGNED** → **BUILT** → **SEEN WORKING** → **RELEASED**. `●` = reached.
+
+| version | where it is detailed | DESIGNED | BUILT | SEEN WORKING | RELEASED |
+|---|---|:-:|:-:|:-:|:-:|
+| 1.0.0 | [ITS VERSIONS](../../DESIGN.md) · § THE FLOW | ● | ● | | ● |
+| 1.1.0 | [ITS VERSIONS](../../DESIGN.md) · [§11](../../DESIGN.md) | ● | ● | | |
+| 1.2.0 | [ITS VERSIONS](../../DESIGN.md) · [§5](../../DESIGN.md) · [§6](../../DESIGN.md) | | | | |
+| 2.0.0 | [ITS VERSIONS](../../DESIGN.md) · [§8](../../DESIGN.md) · [§9](../../DESIGN.md) | | | | |

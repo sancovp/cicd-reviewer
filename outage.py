@@ -4,8 +4,10 @@ the one-token question that asks whether the model answers.
 
   python3 outage.py probe                                  prints up · down <code> · broken <code>   (exit 0 · 10 · 1)
   python3 outage.py mark-unreviewed <repo> <pr> <code>     the UNREVIEWED verdict on the pull request's tip
-  python3 outage.py close-late <repo> <pr> <since>         after a late review: BLOCKING opens a "Fix owed" issue; the
-                                                           `review-owed` label comes off (exit 1 when no verdict landed)
+  python3 outage.py close-late <repo> <pr> <since>         after a late review: BLOCKING opens a "Fix owed" issue, OWED
+                                                           findings alone an "Owed findings" issue, each holding the
+                                                           finding lines; the `review-owed` label comes off (exit 1
+                                                           when no verdict landed)
 
 DOWN is what the model's own answer says: 429 (the plan spent, or a burst), a 5xx, no answer at all (0), or a key it
 refuses (401 · 403) — asked three times a minute apart, so a passing burst is not an outage. Any other answer (a 400 for
@@ -22,7 +24,7 @@ import urllib.error
 import urllib.request
 from typing import Callable, List, Optional, Tuple
 
-from sweep import REVIEW_OWED, VERDICT_BLOCKING, VERDICT_CLEAN, VERDICT_UNREVIEWED, gh, gh_json, gh_lines, verdict_of
+from sweep import BLOCKING_MARK, OWED_MARK, REVIEW_OWED, VERDICT_BLOCKING, VERDICT_CLEAN, VERDICT_UNREVIEWED, gh, gh_json, gh_lines, verdict_of
 
 ENDPOINT = "https://api.minimax.io/anthropic/v1/messages"
 TRIES, APART = 3, 60
@@ -75,20 +77,27 @@ def mark_unreviewed(repo: str, pr: str, code: int) -> None:
     gh(["pr", "review", str(pr), "--repo", repo, "--comment", "--body", unreviewed_body(code)])
 
 
-def late_verdict(comments: List[dict], since: str) -> Optional[str]:
-    """the newest CLEAN or BLOCKING verdict among the comments posted since the late review began"""
+def late_review(comments: List[dict], since: str) -> Tuple[Optional[str], List[str]]:
+    """the newest CLEAN or BLOCKING verdict among the comments posted since the late review began, and that comment's
+    finding lines (BLOCKING and OWED, DESIGN §11)"""
     for c in sorted(comments, key=lambda c: c.get("created_at") or "", reverse=True):
         if (c.get("created_at") or "") < since:
             break
         v = verdict_of(c.get("body") or "")
         if v in (VERDICT_CLEAN, VERDICT_BLOCKING):
-            return v
-    return None
+            lines = [l.strip() for l in (c.get("body") or "").splitlines()]
+            return v, [l for l in lines if l.startswith(BLOCKING_MARK) or l.startswith(OWED_MARK)]
+    return None, []
+
+
+def late_verdict(comments: List[dict], since: str) -> Optional[str]:
+    """the newest CLEAN or BLOCKING verdict among the comments posted since the late review began"""
+    return late_review(comments, since)[0]
 
 
 def close_late(repo: str, pr: str, since: str, log: Callable[[str], None] = print) -> int:
     comments = gh_lines(["api", f"repos/{repo}/issues/{pr}/comments", "--paginate", "--jq", ".[] | {created_at, body}"])
-    v = late_verdict(comments, since)
+    v, findings = late_review(comments, since)
     if v is None:
         if not label_on(repo, pr):
             log(f"#{pr}: no late verdict, and {REVIEW_OWED} is already off — an earlier late review landed; nothing to do")
@@ -105,17 +114,30 @@ def close_late(repo: str, pr: str, since: str, log: Callable[[str], None] = prin
             raise
         log(f"#{pr}: {REVIEW_OWED} is already off — an earlier late review landed; nothing opened, nothing changed")
         return 0
-    if v == VERDICT_BLOCKING:
+    owed = [l for l in findings if l.startswith(OWED_MARK)]
+    if v == VERDICT_BLOCKING or owed:
+        # A merged pull request has no session to record what its late review found, so every finding line goes into
+        # the issue that the session next working in this repository reads: a defect to fix, or findings for boards.
         info = gh_json(["pr", "view", str(pr), "--repo", repo, "--json", "title,url"]) or {}
+        lines = "\n".join(findings)
+        if v == VERDICT_BLOCKING:
+            title = f"Fix owed: #{pr} {info.get('title', '')}".strip()
+            body = (f"#{pr} merged while the reviewer's model was down. Its review, run after it merged, found a defect: "
+                    f"{info.get('url', '')}. The session working in this repository fixes it on a new branch and hands "
+                    f"it off as a ready pull request, and records each OWED finding as a row on the board of the project "
+                    f"it names.")
+        else:
+            title = f"Owed findings: #{pr} {info.get('title', '')}".strip()
+            body = (f"#{pr} merged while the reviewer's model was down. Its review, run after it merged, found nothing "
+                    f"that blocks, and these findings owed to boards: {info.get('url', '')}. The session working in this "
+                    f"repository records each as a row on the board of the project it names, as work on the default "
+                    f"branch, then closes this issue.")
         try:
-            gh(["issue", "create", "--repo", repo, "--title", f"Fix owed: #{pr} {info.get('title', '')}".strip(), "--body",
-                f"#{pr} merged while the reviewer's model was down. Its review, run after it merged, found a defect: "
-                f"{info.get('url', '')}. The session working in this repository fixes it on a new branch and hands it off "
-                "as a ready pull request."])
+            gh(["issue", "create", "--repo", repo, "--title", title, "--body", body + (f"\n\n{lines}" if lines else "")])
         except RuntimeError:
             gh(["pr", "edit", str(pr), "--repo", repo, "--add-label", REVIEW_OWED])   # the next sweep sends it again
             raise
-        log(f"#{pr}: BLOCKING after the merge — a Fix owed issue is open")
+        log(f"#{pr}: {'BLOCKING after the merge — a Fix owed' if v == VERDICT_BLOCKING else 'OWED findings — an Owed findings'} issue is open")
     log(f"#{pr}: late review {v}; {REVIEW_OWED} removed")
     return 0
 

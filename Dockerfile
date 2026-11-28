@@ -32,7 +32,7 @@ RUN pip install --no-cache-dir \
     'requests==2.33.1' 'httpx==0.28.1' 'fastmcp==2.9.0' 'tiktoken>=0.5.0'
 
 # heaven-framework itself from PyPI, WITHOUT deps (so pip cannot re-resolve/upgrade the pins
-# above — Isaac: "get the new version no deps"). Pinned to a released version so the image is
+# above). Pinned to a released version so the image is
 # reproducible + self-hosting (no vendored copy, no monorepo build context). Bump this pin to
 # ship a new heaven-framework into the reviewer.
 RUN pip install --no-cache-dir --no-deps heaven-framework==0.1.35 && \

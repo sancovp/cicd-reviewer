@@ -192,6 +192,42 @@ def t_a_failed_run_with_no_id_names_the_commit_not_none():
     assert w.run() == 2 and "None" not in w.lines[-1] and "gh run list --commit aaaa1111" in w.lines[-1]
 
 
+OWED = "Fine for what it is for.\n- OWED (base/x): `a.py:3` — an old defect\n- OWED (base/y): `b.md:9` — a wording\n\nVERDICT: CLEAN"
+
+
+def t_owed_findings_are_named_on_every_line_and_recorded_after_the_merge():
+    # a review converges (DESIGN §11): its OWED findings never block, so they are never an exit of their own — a CLEAN
+    # verdict merges at once, a push to carry them would race the merge, and a watch started again on the same tip would
+    # stop on them again — but a watch that waited through them to MERGED left the session never reading them
+    w = World(pr(), pr(reviews=[("aaaa1111", OWED)]), pr(state="MERGED", reviews=[("aaaa1111", OWED)]))
+    assert w.run() == 0 and w.i == 3 and "MERGED" in w.lines[-1]
+    assert "record the 2 OWED findings" in w.lines[-1] and "as work on the default branch" in w.lines[-1]
+    # another exit still shows the count; a newer review on the tip decides it
+    w = World(pr(reviews=[("aaaa1111", OWED)]), pr(mergeable="CONFLICTING", reviews=[("aaaa1111", OWED)]))
+    assert w.run() == 2 and "CONFLICT" in w.lines[-1] and "· 2 OWED ·" in w.lines[-1]
+    w = World(pr(state="MERGED", reviews=[("aaaa1111", OWED), ("aaaa1111", CLEAN)]))
+    assert w.run() == 0 and "record the" not in w.lines[-1] and "· 0 OWED ·" in w.lines[-1]
+
+
+def t_with_expect_head_the_old_tips_verdict_is_not_about_the_push():
+    # #2772: started right after a push, the watch read the pull request before GitHub showed the new tip and exited
+    # BLOCKING on the old tip's verdict
+    w = World(pr(head="05503cf112", reviews=[("05503cf112", BLOCK)]), pr(head="1bcf2abb2a"),
+              pr(head="1bcf2abb2a", reviews=[("1bcf2abb2a", CLEAN)]), pr(head="1bcf2abb2a", state="MERGED"))
+    assert w.run(expect="1bcf2abb2a") == 0 and w.i == 4 and "MERGED" in w.lines[-1]
+    assert any("waiting for tip 1bcf2abb2a" in l for l in w.lines)
+    # the tip already there: its verdict counts at once; merged at another tip still exits 4
+    assert World(pr(head="1bcf2abb2a", reviews=[("1bcf2abb2a", BLOCK)])).run(expect="1bcf2abb2a") == 2
+    assert World(pr(head="05503cf112", state="MERGED")).run(expect="1bcf2abb2a") == 4
+    # a tip past the one expected exits PUSHED at once, never hiding the pull request behind a wait
+    w = World(pr(head="05503cf112"), pr(head="99999999aa", mergeable="CONFLICTING"))
+    assert w.run(expect="1bcf2abb2a") == 2 and w.i == 2 and "PUSHED" in w.lines[-1]
+    # a tip that never arrives ends the wait after a bound, naming both tips
+    w = World(pr(head="05503cf112", reviews=[("05503cf112", BLOCK)]))
+    assert w.run(expect="1bcf2abb2a") == 2 and w.i == pw.EXPECT_WAIT_POLLS and "TIP-UNSEEN" in w.lines[-1]
+    assert "05503cf112" in w.lines[-1] and "1bcf2abb2a" in w.lines[-1]
+
+
 def run_all():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("t_")]
     passed = 0

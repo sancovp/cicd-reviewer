@@ -4,6 +4,7 @@
 
 The CI: this one design, with no child design beneath it.
 
+- for its release versions, in order → ITS VERSIONS
 - for what it is, its law, and a pull request's life (the flow, the PR watch, the states) → §0 · §1 · §2
 - for what calls it and what that costs → §3 · for the reviewer, the late review and the coordinator → §4
 - for the merge queue and the queue by hand → §5 · for the sweep and the tracking issue → §6 · §7
@@ -14,7 +15,26 @@ The CI: this one design, with no child design beneath it.
 
 > **END OF STATE FENCE**
 - the session's side of the flow → the rule `top-level-session-worktree` (THE GIT LOOP)
+- the CI's notes of undone work → [`workspace/cicd_reviewer_scratchpad.md`](workspace/cicd_reviewer_scratchpad.md), in
+  its own `workspace/`, which the publisher never copies ([`workspace/CLAUDE.md`](workspace/CLAUDE.md))
+- doc-mirror's generated view of this project, compiled from its journal and never hand-edited or published →
+  [`DESIGN.docmirror.md`](DESIGN.docmirror.md)
 - ARCHIVE AND PROGRAM FOLDERS: `cicd_aios/` · `tests/` · `context/` · `docs/` · `.github/`
+
+## ITS VERSIONS
+
+- **1.0.0** — work reaches the default branch through the CI alone: the verdict line on the exact tip, the merge queue
+  with its coordinator, the daily sweep and its one tracking issue, drafts firing nothing, the PR watch, merges that
+  never wait on the model or on Actions, and the Pages source kept
+- **1.1.0** — a review converges: BLOCKING only for a defect the pull request's own change adds, every other finding
+  owed to its project's board, a new tip reviewed only for what changed since the last reviewed one, and the PR watch
+  naming the owed findings and waiting for the tip it was told to expect
+- **1.2.0** — nothing reaches the default branch by itself: a branch nobody handed off opened as a parked draft, parked
+  work reaching every session, the publisher's work guard before every merge, and a failed review shown failed on the
+  pull request and to the PR watch
+- **2.0.0** — the CI covers every repository at the pace of the canonical home: the review trigger in every active
+  repository, the rule harvest drafting its rule pull requests on free minutes, and a cost meter of reviews and model
+  spend per day
 
 ## 0. This document
 
@@ -80,11 +100,18 @@ account's billing, be the CI by §5); it reads those runs beside the reviews bec
 watch reading the reviews alone waited on it until its cap. It also exits when the trigger's run at the tip has sat queued twenty minutes with no job
 started and no verdict is on the tip (REVIEW-STALLED): GitHub stalls a run in the trigger's concurrency group this way
 and answers a cancel that it is completed, so no review comes from it; marking the pull request draft, then ready, starts
-a fresh run. It checks before it waits, so a pull request
-already in one of those states exits at once. A CLEAN verdict and a
+a fresh run. Every line it prints names how many OWED findings (§11) the newest verdict on the tip carries, and MERGED's
+line says to record each as a row on the board of the project it names, as work on the default branch. OWED findings are
+never an exit of their own: a CLEAN verdict merges at once, so a push to carry them would race the merge, and a watch
+started again on the same tip would stop on them again. With `--expect-head` it judges nothing about the pull request — a
+verdict, a conflict, a review run — until GitHub shows that commit as its tip: right after a push GitHub can still show
+the old tip, whose verdict is not about the push. It still exits MERGED or CLOSED whatever the tip, exits PUSHED when the
+tip moves to a third commit, and exits TIP-UNSEEN once ten polls still show another tip, since the push may never have
+landed, so the wait never hides the pull request for hours. It checks before it waits, so a pull request already in one
+of those states exits at once. A CLEAN verdict and a
 mergeable state of UNKNOWN are not actions (the queue moves a CLEAN pull request; UNKNOWN is GitHub computing). It
 never runs past `--max-hours` (default 4): it exits TIMEOUT saying where the pull request stands. Exit codes: 0 done ·
-2 act (REVIEW-STALLED among them) · 3 timeout · 4 merged at another tip · 5 gh down.
+2 act (REVIEW-STALLED and TIP-UNSEEN among them) · 3 timeout · 4 merged at another tip · 5 gh down.
 
 **While GitHub Actions starts no job** (a review job that fails in seconds with no steps, its annotation naming the
 account's payments or spending limit — the PR watch exits REVIEW-FAILED on it), nothing above moves a pull request: the
@@ -121,8 +148,8 @@ created: a session opens its own PR, and the sweep opens one for a branch left w
 
 | tier | reads | decides | skill |
 |---|---|---|---|
-| **THE REVIEWER** (`MODE=review`) | one PR's diff | its verdict: the review's last line, `VERDICT: CLEAN` or `VERDICT: BLOCKING`, posted with `--comment` (GitHub refuses approve / request-changes from the account that owns the PR) | `cicd_aios/.claude/skills/review-pr-diff` |
-| **THE LATE REVIEW** (`MODE=review-merged`) | one PR merged `UNREVIEWED`, its diff | its verdict, as a comment on the merged PR ending `VERDICT: CLEAN` or `VERDICT: BLOCKING`; BLOCKING opens a "Fix owed" issue (`outage.py close-late`) | `cicd_aios/.claude/skills/review-pr-diff` |
+| **THE REVIEWER** (`MODE=review`) | one PR's diff — on a new tip, only what changed since the last reviewed tip, with the findings that review blocked on (§11) — and what the PR is for: its title, its description, its project's board | each finding on a line of its own, `- BLOCKING: …` or `- OWED (<project>): …`, then its verdict: the review's last line, `VERDICT: CLEAN` or `VERDICT: BLOCKING`, posted with `--comment` (GitHub refuses approve / request-changes from the account that owns the PR) | `cicd_aios/.claude/skills/review-pr-diff` |
+| **THE LATE REVIEW** (`MODE=review-merged`) | one PR merged `UNREVIEWED`, its diff, and what it is for | its findings and its verdict the same way, as a comment on the merged PR ending `VERDICT: CLEAN` or `VERDICT: BLOCKING`; BLOCKING opens a "Fix owed" issue and OWED findings alone an "Owed findings" issue, each holding the finding lines, for the session next working in that repository (`outage.py close-late`) | `cicd_aios/.claude/skills/review-pr-diff` |
 | **THE COORDINATOR** (`MODE=coordinate`) | every ready, fresh PR that shares files with another | their merge order, and which to HOLD (contradicts, undoes or breaks with another), each with a one-sentence reason — written to `/out/decision.json` | `cicd_aios/.claude/skills/coordinate-merges` |
 
 Both tiers run in heaven's AGENT MODE: one conversation, up to 100 rounds (`CICD_ITERATIONS`) of at most 15 tool calls
@@ -131,6 +158,12 @@ as it needs; there is no step limit on the run. A run succeeds only when its res
 ending in a verdict line on the PR's tip, posted during the run (`ci_agent.verdict_posted`); the coordinator's
 `/out/decision.json` — never because of what the agent said; a run without its result gets one more attempt. A review never merges. The coordinator never merges,
 comments or reviews; the queue acts on its file, and with no decision falls back to oldest first, nothing held.
+
+An agent that halts of its own accord — heaven's block report, written when it cannot finish and will not make up a
+result — opens a GitHub issue holding that report (`cicd_aios/.claude/hooks/block_report_to_issue.py`, registered on
+heaven's `ON_BLOCK_REPORT` by heaven's hook loader, which reads the hooks folder of the AIOS the agent runs in; on the
+repository named by `BLOCK_REPORT_ISSUE_REPO`, else the one under review), so a blocked run becomes an item to triage
+rather than a line in a CI log; it never fails the run.
 
 ## 5. The merge queue (`merge_queue.py` · `.github/workflows/merge-queue.yml`)
 
@@ -287,8 +320,20 @@ The HealthWorld box's model is the board's OPEN, the box off until then. This di
   is for — the version it carries, as its description and its project's board name it. Every other finding — a defect
   that was there before, one in a part the PR only touches in passing, a wording, a note — is written in the review as
   OWED and never blocks: the review names the project it belongs to, and the session records it on that project's board
-  in the same PR. A review of a new tip reads only what changed since the last reviewed tip, together with the findings
-  that review blocked on, so a fix opens no fresh review of the whole PR.
+  — a row for the fix it owes, at the first state of the table its kind of work belongs to — as work on the default
+  branch, by its own paths, once the PR's watch names it: a CLEAN verdict merges at once, so a row pushed into the PR
+  would race the merge, and a board is work, which reaches the default branch that way in any case. A late review's
+  findings reach an issue instead (§4), since a merged PR has no session watching it. Every finding is one line of the
+  review — `- BLOCKING: …`, `- OWED (<project>): …`, and on a new tip `- FIXED: …` for one it blocked on before — and the
+  lines and the verdict agree: a CLEAN verdict under a standing BLOCKING line is read BLOCKING by every reader
+  (`sweep.verdict_of`), and the reviewer's run counts such a review as no result and runs again. A review of a new tip
+  reads only what changed since the last reviewed tip, together with the findings that review blocked on, so a fix opens
+  no fresh review of the whole PR (`ci_agent.prior_tip`: the newest verdict on another tip that is an ancestor of this
+  one and has the same merge base with the default branch, so `git diff <tip> HEAD` holds the PR's own change and nothing
+  else). A tip the queue sends back — the default branch changed its files, or it overlaps what just merged — is read
+  whole, against the new default branch, since what changed is around the PR, not in it; so is a PR whose reviewed tips
+  are none of them ancestors of its head, one that merged the default branch in since its last reviewed tip, and one
+  whose head cannot be read.
 - Our one MiniMax key, on a capped subscription, runs the reviewer; no box holds it but the test business's during a proof, its loop off, unset after.
 - Nothing fires on a draft or on the standing branch.
 - A GitHub Pages source branch is the live site: never merged, never deleted.

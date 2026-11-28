@@ -129,6 +129,14 @@ def t_verdict_is_read_from_the_last_line_only():
     assert sweep.verdict_of("the model was down\n\nVERDICT: UNREVIEWED") == sweep.VERDICT_UNREVIEWED
 
 
+def t_a_clean_verdict_under_a_standing_blocking_line_is_read_blocking():
+    # a review converges (DESIGN §11): its finding lines and its verdict must agree, and the queue, the sweep and the
+    # watch all read the verdict here — a CLEAN read over a standing BLOCKING line would merge the defect
+    assert sweep.verdict_of("- BLOCKING: `f.py:1` — crash\nVERDICT: CLEAN") == sweep.VERDICT_BLOCKING
+    assert sweep.verdict_of("- OWED (base/x): `g.py:2` — old\n- FIXED: `f.py:1` — guarded\nVERDICT: CLEAN") == \
+        sweep.VERDICT_CLEAN
+
+
 def t_a_verdict_on_an_older_tip_does_not_count():
     reviews = [{"commit_id": "old", "submitted_at": "2026-01-02", "body": "VERDICT: CLEAN"},
                {"commit_id": "abc", "submitted_at": "2026-01-01", "body": "looked\nVERDICT: BLOCKING"}]

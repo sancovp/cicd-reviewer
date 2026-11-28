@@ -47,15 +47,49 @@ BASE_SYSTEM_PROMPT = (
 )
 
 
-def _review_prompt(repo, gh_repo, pr, base, head):
+# A REVIEW CONVERGES (DESIGN.md §11): a finding is BLOCKING only when the PR's own change adds it or makes it worse, in
+# what the PR is for; every other finding is OWED to the board of the project it belongs to and never blocks. Each is
+# one line of the review, so the PR watch and the next review read them without the model.
+BLOCKING_MARK = "- BLOCKING"
+OWED_MARK = "- OWED"
+FIXED_MARK = "- FIXED"   # a finding the last review blocked on, fixed since: never written with the BLOCKING mark
+# the findings an earlier review blocked on, carried into the review of the next tip, are cut to this many characters
+PRIOR_FINDINGS_MAX = 6000
+
+
+def _classify(pr, gh_repo):
+    return (
+        f"First read what the pull request is for — `gh pr view {pr} --repo {gh_repo} --json title,body` and the board "
+        f"of the project it changes (its `.claude/rules/*_states.md`): the version it carries is what it is for. Then "
+        f"classify every finding: BLOCKING only when the pull request's own change adds the defect or makes it worse, in "
+        f"what the pull request is for; every other finding — a defect that was there before, one in a part the pull "
+        f"request only touches in passing, a wording, a note — is OWED and never blocks. Write each finding on one line, "
+        f"{BLOCKING_MARK}: <path:line> — <failure>   or   {OWED_MARK} (<the folder of the project it belongs to>): "
+        f"<path:line> — <finding>. "
+    )
+
+
+def _review_prompt(repo, gh_repo, pr, base, head, prior=None):
+    """The review of one tip. `prior` — the reviewed tip `prior_tip` reads on from — makes it the review of what changed
+    since that tip, together with the findings that review blocked on."""
+    since = ""
+    if prior:
+        since = (
+            f"This pull request was already reviewed at `{prior['commit_id']}` ({prior['verdict']}). Review ONLY what "
+            f"changed since that tip: `git -C {repo} diff {prior['commit_id']} HEAD` — no merge of the default branch "
+            f"came in since it, so every line of that diff is the pull request's own. Do not review the rest of the pull "
+            f"request again: a defect you see outside what changed is OWED, never BLOCKING. Check every finding that "
+            f"review blocked on: fixed ⇒ one line `{FIXED_MARK}: <path:line> — <what fixed it>`; not fixed ⇒ it stays a "
+            f"{BLOCKING_MARK} line. The findings it blocked on:\n{blocked_findings(prior)}\n"
+        )
     return (
         f"MODE=review. Review pull request #{pr} on {gh_repo}: head `{head}` against base "
-        f"`{base}`. The repo is checked out at {repo}. Follow the `review-pr-diff` skill: read "
-        f"the diff, find real correctness/security/contract issues per your review-discipline "
-        f"rule (cite path:line, trace each to an exact symptom, drop vague ones), and post your "
-        f"review with `gh pr review {pr} --repo {gh_repo} --comment`. The review's LAST LINE must be "
-        f"exactly `VERDICT: CLEAN` (no blocking finding) or `VERDICT: BLOCKING` (at least one real "
-        f"correctness/security/contract finding) — the workflow merges the pull request on CLEAN. "
+        f"`{base}`. The repo is checked out at {repo}. Follow the `review-pr-diff` skill. {_classify(pr, gh_repo)}"
+        f"{since}Read the diff{' (only what changed since that tip)' if prior else ''}, find real "
+        f"correctness/security/contract issues per your review-discipline rule (cite path:line, trace each to an exact symptom, drop vague ones), and post your "
+        f"review with `gh pr review {pr} --repo {gh_repo} --comment --body-file <file>`. The review's LAST LINE must be "
+        f"exactly `VERDICT: CLEAN` (no BLOCKING finding; OWED findings may sit above it) or `VERDICT: BLOCKING` (at least "
+        f"one BLOCKING finding) — the merge queue merges the pull request on CLEAN. "
         f"End with DONE."
     )
 
@@ -65,10 +99,58 @@ def _late_review_prompt(gh_repo, pr):
         f"MODE=review-merged. Pull request #{pr} on {gh_repo} was MERGED while the reviewer's model was down, so nobody "
         f"has reviewed it. Review it now: read its diff with `gh pr diff {pr} --repo {gh_repo}` (the default branch is "
         f"checked out at /repo for context), and find real correctness/security/contract issues per the `review-pr-diff` "
-        f"skill and your review-discipline rule (cite path:line, trace each to an exact symptom, drop vague ones). Post "
+        f"skill and your review-discipline rule (cite path:line, trace each to an exact symptom, drop vague ones). "
+        f"{_classify(pr, gh_repo)}Post "
         f"your review as a comment with `gh pr comment {pr} --repo {gh_repo} --body-file <file>`. Its LAST LINE must be "
-        f"exactly `VERDICT: CLEAN` or `VERDICT: BLOCKING` — a BLOCKING verdict opens a fix issue. End with DONE."
+        f"exactly `VERDICT: CLEAN` or `VERDICT: BLOCKING` — a BLOCKING verdict opens a fix issue, and every finding line "
+        f"is carried into the issue the CI opens. End with DONE."
     )
+
+
+VERDICT_UNREVIEWED = "VERDICT: UNREVIEWED"
+
+
+def _verdict(body, lines_allowed=None):
+    """A review's verdict, read as `sweep.verdict_of` reads it: a CLEAN one under a standing BLOCKING line is BLOCKING."""
+    lines = [l.strip() for l in (body or "").strip().splitlines() if l.strip()]
+    if not lines or lines[-1] not in (lines_allowed or VERDICT_LINES):
+        return None
+    if lines[-1] == "VERDICT: CLEAN" and any(l.startswith(BLOCKING_MARK) for l in lines):
+        return "VERDICT: BLOCKING"
+    return lines[-1]
+
+
+def last_reviewed(reviews, head_sha, usable=None):
+    """The newest review that gave a verdict on a tip other than this one, as its `commit_id`, `verdict` and `body`; None
+    when no earlier tip was reviewed, or when this very tip already carries a verdict, UNREVIEWED included — a tip sent
+    for review again is the queue's (its files changed on the default branch, or it overlaps what just merged), which
+    reads the whole pull request against the new default branch. `VERDICT: UNREVIEWED` is never a reviewed tip: the
+    model did not read it. With `usable`, the newest reviewed tip it accepts (an older one when the newest is not)."""
+    if not head_sha:
+        return None   # the head could not be read: nothing says which tips are earlier, so the review reads it whole
+    best = None
+    for rv in reviews or []:
+        if rv.get("commit_id") == head_sha and _verdict(rv.get("body"), VERDICT_LINES + (VERDICT_UNREVIEWED,)):
+            return None
+        verdict = _verdict(rv.get("body"))
+        if not verdict or not rv.get("commit_id") or rv.get("commit_id") == head_sha:
+            continue
+        if usable is not None and not usable(rv["commit_id"]):
+            continue
+        if best is None or (rv.get("submitted_at") or "") > (best.get("submitted_at") or ""):
+            best = dict(rv, verdict=verdict)
+    return best
+
+
+def blocked_findings(prior):
+    """What the earlier review blocked on: its BLOCKING lines; a BLOCKING review written before those lines existed gives
+    its whole body; a CLEAN one blocked on nothing."""
+    if prior.get("verdict") != "VERDICT: BLOCKING":
+        return "(none — that review was CLEAN)"
+    lines = [l.strip() for l in (prior.get("body") or "").splitlines()]
+    marked = [l for l in lines if l.startswith(BLOCKING_MARK)]
+    text = "\n".join(marked) if marked else "\n".join(l for l in lines if l and l not in VERDICT_LINES)
+    return text[:PRIOR_FINDINGS_MAX]
 
 
 def _pr_prompt(repo, gh_repo, head):
@@ -151,27 +233,67 @@ def extract_text(result):
 VERDICT_LINES = ("VERDICT: CLEAN", "VERDICT: BLOCKING")
 
 
+def _agrees(body):
+    """A review's verdict line and its finding lines agree: a BLOCKING line stands only under `VERDICT: BLOCKING`."""
+    lines = [l.strip() for l in (body or "").strip().splitlines() if l.strip()]
+    if not lines or lines[-1] not in VERDICT_LINES:
+        return False
+    return lines[-1] == "VERDICT: BLOCKING" or not any(l.startswith(BLOCKING_MARK) for l in lines)
+
+
 def verdict_posted(reviews, head_sha, since_iso):
-    """True when a review on exactly this tip, posted since the run began, ends in a verdict line. The deliverable is
-    checked on GitHub, never inferred from the agent's last words."""
+    """True when a review on exactly this tip, posted since the run began, ends in a verdict line that its finding lines
+    agree with. The deliverable is checked on GitHub, never inferred from the agent's last words; a review whose lines
+    disagree is no result, and the run is tried again."""
     for rv in reviews or []:
         if rv.get("commit_id") != head_sha or (rv.get("submitted_at") or "") < since_iso:
             continue
-        lines = [l.strip() for l in (rv.get("body") or "").strip().splitlines() if l.strip()]
-        if lines and lines[-1] in VERDICT_LINES:
+        if _agrees(rv.get("body")):
             return True
     return False
 
 
-def _review_landed(gh_repo, pr, since_iso):
+def _head(gh_repo, pr):
+    import subprocess
+    return subprocess.run(["gh", "pr", "view", str(pr), "--repo", gh_repo, "--json", "headRefOid", "-q", ".headRefOid"],
+                          capture_output=True, text=True).stdout.strip()
+
+
+def _reviews(gh_repo, pr):
     import json
     import subprocess
-    head = subprocess.run(["gh", "pr", "view", str(pr), "--repo", gh_repo, "--json", "headRefOid", "-q", ".headRefOid"],
-                          capture_output=True, text=True).stdout.strip()
     out = subprocess.run(["gh", "api", f"repos/{gh_repo}/pulls/{pr}/reviews", "--paginate", "--jq",
                           ".[] | {commit_id, submitted_at, body}"], capture_output=True, text=True).stdout
-    reviews = [json.loads(l) for l in out.splitlines() if l.strip()]
-    return verdict_posted(reviews, head, since_iso)
+    return [json.loads(l) for l in out.splitlines() if l.strip()]
+
+
+def _review_landed(gh_repo, pr, since_iso):
+    return verdict_posted(_reviews(gh_repo, pr), _head(gh_repo, pr), since_iso)
+
+
+def _git(repo, *args):
+    import subprocess
+    r = subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True)
+    return r.returncode, r.stdout.strip()
+
+
+def prior_tip(repo, gh_repo, pr, base, git=None):
+    """The last reviewed tip this review reads on from, or None for a whole review. A reviewed tip is read on from only
+    when it is an ancestor of the checked-out head AND no merge of the default branch came in since it (both have the
+    same merge base with `origin/<base>`): then `git diff <tip> HEAD` is the pull request's own change and nothing
+    else, renames and deletions included. Otherwise — no reviewed tip, a rewritten history, the default branch merged
+    in, a head or a merge base that cannot be read — the whole pull request is read."""
+    git = git or (lambda *a: _git(repo, *a))
+    rc, mb_head = git("merge-base", f"origin/{base}", "HEAD")
+    if rc != 0 or not mb_head:
+        return None
+
+    def usable(sha):
+        if git("merge-base", "--is-ancestor", sha, "HEAD")[0] != 0:
+            return False
+        rc, mb = git("merge-base", f"origin/{base}", sha)
+        return rc == 0 and mb == mb_head
+    return last_reviewed(_reviews(gh_repo, pr), _head(gh_repo, pr), usable)
 
 
 def late_verdict_posted(comments, since_iso):
@@ -179,8 +301,7 @@ def late_verdict_posted(comments, since_iso):
     for c in comments or []:
         if (c.get("created_at") or "") < since_iso:
             continue
-        lines = [l.strip() for l in (c.get("body") or "").strip().splitlines() if l.strip()]
-        if lines and lines[-1] in VERDICT_LINES:
+        if _agrees(c.get("body")):
             return True
     return False
 
@@ -236,9 +357,11 @@ def main():
         sys.exit("FATAL: MINIMAX_API_KEY is not set — the review agent has no model credential.")
 
     if mode == "review":
+        pr = os.environ.get("PR_NUMBER", "")
+        prior = prior_tip(repo, gh_repo, pr, os.environ.get("BASE_REF", "") or "main")
+        log.info("review of %s", f"what changed since {prior['commit_id'][:10]}" if prior else "the whole pull request")
         prompt = _review_prompt(
-            repo, gh_repo, os.environ.get("PR_NUMBER", ""),
-            os.environ.get("BASE_REF", ""), os.environ.get("HEAD_REF", ""),
+            repo, gh_repo, pr, os.environ.get("BASE_REF", ""), os.environ.get("HEAD_REF", ""), prior,
         )
     elif mode == "review-merged":
         prompt = _late_review_prompt(gh_repo, os.environ.get("PR_NUMBER", ""))

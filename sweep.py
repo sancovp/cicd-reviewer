@@ -40,6 +40,8 @@ TRACKING_TITLE = "UNMERGED WORK"
 VERDICT_CLEAN = "VERDICT: CLEAN"
 VERDICT_BLOCKING = "VERDICT: BLOCKING"
 VERDICT_UNREVIEWED = "VERDICT: UNREVIEWED"   # the model was down at this tip: merged on the automatic checks, reviewed after
+BLOCKING_MARK = "- BLOCKING"                 # a review's finding line that blocks (DESIGN §11); ci_agent's own copy
+OWED_MARK = "- OWED"                         # a review's finding line owed to a project's board, never blocking
 REVIEW_OWED = "review-owed"                  # the label on a pull request merged UNREVIEWED, until its late review lands
 REVIEW_SPACING = 180   # seconds between dispatched reviews: the model refuses (429) reviews fired all at once
 
@@ -69,10 +71,14 @@ def gh_strings(args: List[str]) -> List[str]:
 
 
 def verdict_of(body: str) -> Optional[str]:
-    """The verdict line a review ends with, or None when it has none."""
-    for line in reversed((body or "").strip().splitlines()):
-        line = line.strip()
+    """The verdict line a review ends with, or None when it has none. A review that ends CLEAN while a finding line of it
+    still says BLOCKING (DESIGN §11) is read BLOCKING: the finding lines and the verdict must agree, and the safe reading
+    of two that do not is the one that merges nothing."""
+    lines = [l.strip() for l in (body or "").strip().splitlines()]
+    for line in reversed(lines):
         if line in (VERDICT_CLEAN, VERDICT_BLOCKING, VERDICT_UNREVIEWED):
+            if line == VERDICT_CLEAN and any(l.startswith(BLOCKING_MARK) for l in lines):
+                return VERDICT_BLOCKING
             return line
         if line:
             return None
