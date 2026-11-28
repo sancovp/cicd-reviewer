@@ -64,6 +64,6 @@ Each release version of the design's ITS VERSIONS. Phases (stated once in
 | version | where it is detailed | DESIGNED | BUILT | SEEN WORKING | RELEASED |
 |---|---|:-:|:-:|:-:|:-:|
 | 1.0.0 | [ITS VERSIONS](../../DESIGN.md) · § THE FLOW | ● | ● | | ● |
-| 1.1.0 | [ITS VERSIONS](../../DESIGN.md) · [§11](../../DESIGN.md) | ● | ● | | |
+| 1.1.0 | [ITS VERSIONS](../../DESIGN.md) · [§11](../../DESIGN.md) | ● | ● | | ● |
 | 1.2.0 | [ITS VERSIONS](../../DESIGN.md) · [§5](../../DESIGN.md) · [§6](../../DESIGN.md) | | | | |
 | 2.0.0 | [ITS VERSIONS](../../DESIGN.md) · [§8](../../DESIGN.md) · [§9](../../DESIGN.md) | | | | |
